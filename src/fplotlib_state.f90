@@ -1,16 +1,16 @@
-! fplot_state - the types and the module state the rest of fplot works on.
+! fplotlib_state - the types and the module state the rest of fplotlib works on.
 !
-! fplot is stateful, as pylab is: there is a current figure and a current
+! fplotlib is stateful, as pylab is: there is a current figure and a current
 ! axes, and every drawing call adds to them. What that state is made of
 ! lives here, so that the parts of the library that build it and the parts
 ! that draw it can be read apart from one another.
-module fplot_state
-    use fplot_colors
-    use fplot_style
-    use fplot_render
-    use fplot_ticks
-    use fplot_cmap
-    use fplot_scale
+module fplotlib_state
+    use fplotlib_colors
+    use fplotlib_style
+    use fplotlib_render
+    use fplotlib_ticks
+    use fplotlib_cmap
+    use fplotlib_scale
     implicit none
     public
 
@@ -115,7 +115,7 @@ module fplot_state
     ! PATCH: a closed ring of vertices, filled and outlined.
     integer, parameter :: SERIES_PATCH = 16
 
-    ! matplotlib's default zorders for the artists fplot draws.
+    ! matplotlib's default zorders for the artists fplotlib draws.
     real(dp), parameter :: Z_PATCH = 1.0_dp, Z_GRID = 1.5_dp, Z_LINE = 2.0_dp
     ! QUIVER: x, y hold the tails and qu, qv the vectors.
     integer, parameter :: SERIES_QUIVER = 15
@@ -586,4 +586,4 @@ module fplot_state
     ! user scale, so they map through a plain linear one.
     type(scale_t), parameter :: linear_scale = scale_t(SCALE_LINEAR, 2.0_dp, 1.0_dp)
 
-end module fplot_state
+end module fplotlib_state

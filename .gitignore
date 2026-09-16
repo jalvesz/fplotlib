@@ -3,7 +3,7 @@
 !.pixi/config.toml
 
 # build artifacts
-build/
+*build/
 *.mod
 *.o
 *.a
@@ -13,7 +13,7 @@ build/
 tests/out/
 tests/refs/
 demo.svg
-fplot_show.svg
+fplotlib_show.svg
 *.svg
 
 # python

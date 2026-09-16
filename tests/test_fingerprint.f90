@@ -310,7 +310,7 @@ contains
 
         if (update_requested()) then
             open (newunit=u, file=path, status="replace", action="write")
-            write (u, "(a)") "# fplot test fingerprints, FPHash-4096 v1 (tests/test_fingerprint.f90)."
+            write (u, "(a)") "# fplotlib test fingerprints, FPHash-4096 v1 (tests/test_fingerprint.f90)."
             write (u, "(a)") "# Regenerate after an intended change of the pictures: fpm test -- --update"
             write (u, "(a)") "# name width height fingerprint"
             do i = 1, ngot

@@ -1,12 +1,12 @@
-# fplot
+# fplotlib
 
-[![CI](https://github.com/certik/fplot/actions/workflows/ci.yml/badge.svg)](https://github.com/certik/fplot/actions/workflows/ci.yml)
+[![CI](https://github.com/certik/fplotlib/actions/workflows/ci.yml/badge.svg)](https://github.com/certik/fplotlib/actions/workflows/ci.yml)
 
 Pure Fortran plotting library with a pylab-style API, writing SVG, PNG, PDF and EPS.
-No external graphics library: the PNG rasterizer and its font are part of fplot.
+No external graphics library: the PNG rasterizer and its font are part of fplotlib.
 
 ```fortran
-use fplot
+use fplotlib
 call plot(x, y, "k-", label="sin")
 call title("My plot")
 call xlabel("x")
@@ -14,7 +14,7 @@ call ylabel("y")
 call grid(.true.)
 call legend()
 call savefig("out.svg")   ! or "out.png", "out.pdf", "out.eps"
-call show()               ! Jupyter (LFortran) or writes fplot_show.svg
+call show()               ! Jupyter (LFortran) or writes fplotlib_show.svg
 
 ! subplots
 call clf()
@@ -206,18 +206,18 @@ call suptitle("figure title")
   single letters, `C0`-`C9`, or a greyscale fraction such as `"0.5"`
 - SVG defaults aligned with matplotlib (6.4×4.8 in, tab10 colors, subplot margins)
 
-## Using fplot in your project
+## Using fplotlib in your project
 
-fplot is an [fpm](https://fpm.fortran-lang.org) package with no dependencies
+fplotlib is an [fpm](https://fpm.fortran-lang.org) package with no dependencies
 outside the Fortran standard library, so a project picks it up with one entry
 in its `fpm.toml`:
 
 ```toml
 [dependencies]
-fplot = { git = "https://github.com/certik/fplot" }
+fplotlib = { git = "https://github.com/certik/fplotlib" }
 ```
 
-and then `use fplot` and call `plot`, `title`, `savefig` as the examples below
+and then `use fplotlib` and call `plot`, `title`, `savefig` as the examples below
 do. It builds with gfortran, flang and LFortran:
 
 ```bash
@@ -226,7 +226,7 @@ fpm build --compiler flang
 fpm build --compiler lfortran
 ```
 
-The pixi tasks below are for developing fplot itself, with pinned compilers.
+The pixi tasks below are for developing fplotlib itself, with pinned compilers.
 
 ## Build
 
@@ -290,8 +290,8 @@ floating point value fails there.
 The fingerprints cover the raster output. SVG, PDF and EPS are written by the
 same layout and drawing code but checked only by the comparisons below.
 
-The SVG comparison is structural because a viewer, not fplot, decides what an
-SVG looks like. PNG, PDF and EPS are compared as pixels, since there fplot
+The SVG comparison is structural because a viewer, not fplotlib, decides what an
+SVG looks like. PNG, PDF and EPS are compared as pixels, since there fplotlib
 decides.
 
 CI (Linux) has one job per compiler, each with only that compiler and fpm
@@ -308,10 +308,10 @@ flang build against matplotlib.
 
 ```
 src/           library modules
-               fplot_state.f90   shared types and the figure state
-               fplot_artist.f90  drawing primitives (strokes, fills, markers)
-               fplot_draw.f90    layout, axes decoration, one renderer per plot type
-               fplot.f90         the plotting API
+               fplotlib_state.f90   shared types and the figure state
+               fplotlib_artist.f90  drawing primitives (strokes, fills, markers)
+               fplotlib_draw.f90    layout, axes decoration, one renderer per plot type
+               fplotlib.f90         the plotting API
 examples/      demo.f90
 tests/         Fortran test plots, fingerprints, matplotlib refs, compare scripts
 ```
@@ -320,10 +320,10 @@ tests/         Fortran test plots, fingerprints, matplotlib refs, compare script
 
 MIT, in `LICENSE`.
 
-The compiled-in glyph outlines in `src/fplot_glyphs_data.f90` are derived
+The compiled-in glyph outlines in `src/fplotlib_glyphs_data.f90` are derived
 from DejaVu Sans, whose licence is in `LICENSE_DEJAVU`: the Bitstream Vera fonts
 are copyright Bitstream, and the DejaVu changes are in the public domain. The
-colormap tables in `src/fplot_cmap.f90` are sampled from matplotlib, which is
+colormap tables in `src/fplotlib_cmap.f90` are sampled from matplotlib, which is
 BSD-licensed, and the perceptual maps (viridis, magma, inferno, plasma) are
 released by their authors under CC0.
 
@@ -332,17 +332,17 @@ released by their authors under CC0.
 With LFortran as a Jupyter kernel, display the SVG interactively:
 
 ```fortran
-use fplot
+use fplotlib
 use lfortran_display
 ! ... plot / title / grid / legend ...
 call display_data("image/svg+xml", render_svg())
 ```
 
-`show()` always writes `fplot_show.svg` (works with Flang and LFortran offline).
+`show()` always writes `fplotlib_show.svg` (works with Flang and LFortran offline).
 
 ## Fidelity to matplotlib
 
-fplot is measured against matplotlib rather than described as similar to it:
+fplotlib is measured against matplotlib rather than described as similar to it:
 every feature has a case in `tests/test_plots.f90` and a matplotlib reference
 in `tests/gen_mpl_refs.py`, and the comparisons above put a number on the
 difference. As of this writing, over 100 cases:
@@ -354,9 +354,9 @@ difference. As of this writing, over 100 cases:
 | EPS | 124 | 3.57/255 |
 | GIF | 20 frames | 0.60/255 |
 
-What is left is mostly antialiasing along edges, and text: fplot draws with
+What is left is mostly antialiasing along edges, and text: fplotlib draws with
 its own compiled-in DejaVu Sans metrics and glyph outlines, so a stem lands
 on the same pixel column as matplotlib's but not always with the same
 coverage. The SVG is not matplotlib's SVG byte for byte, and is not meant to
 be: matplotlib writes every glyph as a path and attaches its own metadata,
-while fplot writes `<text>` and leaves the glyphs to the viewer.
+while fplotlib writes `<text>` and leaves the glyphs to the viewer.

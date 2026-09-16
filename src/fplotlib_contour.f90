@@ -1,12 +1,12 @@
-! fplot_contour — the geometry behind contour and contourf.
+! fplotlib_contour — the geometry behind contour and contourf.
 !
 ! Each grid cell is split into two triangles and the work is done per triangle.
 ! Linear interpolation is exact on a triangle, so a level crossing is always a
 ! single segment and a band is always one convex polygon. The usual marching
 ! squares saddle ambiguity, where a cell straddling a level has two equally
 ! valid resolutions, simply cannot arise.
-module fplot_contour
-    use fplot_style, only: dp
+module fplotlib_contour
+    use fplotlib_style, only: dp
     implicit none
     private
 
@@ -162,4 +162,4 @@ contains
         qv(nq) = v
     end subroutine push
 
-end module fplot_contour
+end module fplotlib_contour

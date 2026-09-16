@@ -1,11 +1,11 @@
-! fplot_scale — how a data value becomes a position along an axis.
+! fplotlib_scale — how a data value becomes a position along an axis.
 !
 ! Every axis is a monotone map from data space to a linear "screen" space.
 ! Collecting that map behind one type means the renderer, the limit padding
 ! and the tick placement all ask the same question instead of each carrying
 ! its own `is this a log axis` flag.
-module fplot_scale
-    use fplot_style, only: dp
+module fplotlib_scale
+    use fplotlib_style, only: dp
     implicit none
     private
 
@@ -76,4 +76,4 @@ contains
         f = s%linscale / (1.0_dp - 0.1_dp)
     end function linscale_adj
 
-end module fplot_scale
+end module fplotlib_scale

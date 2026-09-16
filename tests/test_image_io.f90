@@ -2,7 +2,7 @@
 !
 ! The fingerprints in test_fingerprint are taken from the files on disk
 ! rather than from the renderer's memory, so that the PNG and GIF encoders
-! are tested along with everything that drew the picture. Only what fplot
+! are tested along with everything that drew the picture. Only what fplotlib
 ! itself writes has to be read: 8-bit PNG without interlacing, and GIF with
 ! whole frames and no interlacing. Inflate follows zlib's puff.c.
 

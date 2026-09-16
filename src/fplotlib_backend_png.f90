@@ -1,8 +1,8 @@
-! fplot_backend_png — raster output.
+! fplotlib_backend_png — raster output.
 !
 ! The odd one out among the backends: the other three write a description of
 ! the drawing and let something else decide what it looks like, while this one
-! has to decide. That work lives in fplot_raster and fplot_png; what is left
+! has to decide. That work lives in fplotlib_raster and fplotlib_png; what is left
 ! here is only the translation from the rendering API's calls into fills.
 !
 ! Because the API is purely additive and in painter's order, every call is
@@ -12,17 +12,17 @@
 !
 ! Text is the one place this backend cannot follow the others. SVG and PDF
 ! hand the string over and let a font engine draw it; there is no font engine
-! here, so the glyph outlines are compiled in (see fplot_glyphs) and text is
+! here, so the glyph outlines are compiled in (see fplotlib_glyphs) and text is
 ! filled with exactly the code that fills any other path. They are DejaVu Sans
 ! outlines, which is what matplotlib draws with, so the text lands in the same
 ! place rather than merely a similar one.
 
-module fplot_backend_png
-    use fplot_style, only: dp, utf8_next
-    use fplot_render
-    use fplot_raster
-    use fplot_png, only: png_encode
-    use fplot_glyphs, only: EM, ASCENT, DESCENT, XHEIGHT, &
+module fplotlib_backend_png
+    use fplotlib_style, only: dp, utf8_next
+    use fplotlib_render
+    use fplotlib_raster
+    use fplotlib_png, only: png_encode
+    use fplotlib_glyphs, only: EM, ASCENT, DESCENT, XHEIGHT, &
                             glyph_advance, glyph_verbs, glyph_points, &
                             FACE_REGULAR, FACE_BOLD, FACE_OBLIQUE, &
                             FACE_BOLD_OBLIQUE
@@ -501,4 +501,4 @@ contains
                         paint%fill_alpha, shifted_clip(self, paint%clip))
     end subroutine png_draw_image
 
-end module fplot_backend_png
+end module fplotlib_backend_png

@@ -1,14 +1,14 @@
-"""Compare fplot's PNGs to matplotlib's, pixel by pixel.
+"""Compare fplotliblib's PNGs to matplotlib's, pixel by pixel.
 
 The SVG comparison next door checks structure, because two renderers can
 draw the same SVG differently and a bit comparison would be meaningless. For
-PNG there is no such excuse: fplot rasterizes the figure itself, so it can be
+PNG there is no such excuse: fplotliblib rasterizes the figure itself, so it can be
 held to the actual pixels matplotlib produces.
 
-The figures are not expected to be identical. fplot lays out independently, so
+The figures are not expected to be identical. fplotliblib lays out independently, so
 a tick can land a fraction of a point away from matplotlib's, and after pixel
 snapping a fraction of a point becomes a whole pixel. Text is the other source
-of difference: matplotlib hints glyphs through FreeType and fplot fills the
+of difference: matplotlib hints glyphs through FreeType and fplotliblib fills the
 outlines unhinted, so stems land on slightly different pixels. What this test
 is for is catching the errors that are not sub-pixel: a missing element, a
 wrong colour, a shape drawn in the wrong place.
@@ -31,7 +31,7 @@ OUT = ROOT / "out"
 # number is dominated by antialiasing along shared edges.
 MEAN_LIMIT = 8.0
 
-# Cases whose canvas fplot sizes itself, where a small disagreement about the
+# Cases whose canvas fplotliblib sizes itself, where a small disagreement about the
 # bounding box is expected rather than a fault.
 SIZE_TOLERANCE = {"savefig_tight": 0.02}
 DEFAULT_SIZE_TOLERANCE = 0.0
@@ -76,7 +76,7 @@ def main() -> int:
         print("no PNGs to compare; run: pixi run test-flang")
         return 1
 
-    print("Comparing fplot PNGs to matplotlib references\n")
+    print("Comparing fplotliblib PNGs to matplotlib references\n")
     results.sort(key=lambda r: -r[1])
     failed = [r for r in results if r[1] < 0 or r[1] > MEAN_LIMIT]
 

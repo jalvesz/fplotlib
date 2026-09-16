@@ -1,4 +1,4 @@
-! fplot_tri — a triangulation of scattered points.
+! fplotlib_tri — a triangulation of scattered points.
 !
 ! matplotlib's tri module hands its points to Qhull and gets a Delaunay
 ! triangulation back. This is the same triangulation, built here by the
@@ -10,8 +10,8 @@
 ! The work is quadratic in the number of points, which is what a plot of
 ! a few thousand of them can well afford.
 
-module fplot_tri
-    use fplot_style, only: dp
+module fplotlib_tri
+    use fplotlib_style, only: dp
     implicit none
     private
 
@@ -155,4 +155,4 @@ contains
         yes = det > 0.0_dp
     end function in_circle
 
-end module fplot_tri
+end module fplotlib_tri

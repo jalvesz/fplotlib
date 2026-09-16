@@ -1,4 +1,4 @@
-! fplot_gif — the GIF container: colour quantization and LZW.
+! fplotlib_gif — the GIF container: colour quantization and LZW.
 !
 ! An animation has to be one file, and the one format every browser, viewer
 ! and chat window plays without a codec is still GIF. The cost is 256 colours
@@ -11,7 +11,7 @@
 !
 ! No giflib, nothing to link.
 
-module fplot_gif
+module fplotlib_gif
     implicit none
     private
 
@@ -451,4 +451,4 @@ contains
         bytes = to_str(out)
     end function gif_encode
 
-end module fplot_gif
+end module fplotlib_gif

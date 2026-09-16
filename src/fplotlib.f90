@@ -1,25 +1,25 @@
-! fplot — pure Fortran pylab-style SVG plotting library.
-module fplot
-    use fplot_colors
-    use fplot_style
-    use fplot_scale
-    use fplot_cmap
-    use fplot_contour
-    use fplot_tri, only: delaunay
-    use fplot_ticks
-    use fplot_svg
-    use fplot_render
-    use fplot_backend_svg
-    use fplot_backend_pdf
-    use fplot_backend_eps
-    use fplot_gif, only: gif_encode
-    use fplot_proj3d
-    use fplot_backend_png
-    use fplot_mathtext
-    use fplot_dates
-    use fplot_state
-    use fplot_artist
-    use fplot_draw
+! fplotlib — pure Fortran pylab-style SVG plotting library.
+module fplotlib
+    use fplotlib_colors
+    use fplotlib_style
+    use fplotlib_scale
+    use fplotlib_cmap
+    use fplotlib_contour
+    use fplotlib_tri, only: delaunay
+    use fplotlib_ticks
+    use fplotlib_svg
+    use fplotlib_render
+    use fplotlib_backend_svg
+    use fplotlib_backend_pdf
+    use fplotlib_backend_eps
+    use fplotlib_gif, only: gif_encode
+    use fplotlib_proj3d
+    use fplotlib_backend_png
+    use fplotlib_mathtext
+    use fplotlib_dates
+    use fplotlib_state
+    use fplotlib_artist
+    use fplotlib_draw
     implicit none
     private
 
@@ -66,7 +66,7 @@ module fplot
     ! A handle to one axes of the current figure, so that a script can say
     ! ax%plot(...) instead of selecting an axes and then drawing into it.
     !
-    ! It holds an index, not a copy: fplot is stateful, and every binding is
+    ! It holds an index, not a copy: fplotlib is stateful, and every binding is
     ! "make this the current axes, then call the module procedure of the same
     ! name". That keeps one implementation of each plot type rather than two,
     ! and means the two styles can be mixed freely. Anything without a
@@ -338,7 +338,7 @@ contains
             call stash_fig(cur_fig)
         end if
         if (present(num)) then
-            if (num < 1) error stop "fplot: figure num must be positive"
+            if (num < 1) error stop "fplotlib: figure num must be positive"
             k = num
         else
             k = next_free_fig()
@@ -358,12 +358,12 @@ contains
         fig_dpi = DPI_DEFAULT
         if (present(figsize)) then
             if (figsize(1) <= 0.0_dp .or. figsize(2) <= 0.0_dp) &
-                error stop "fplot: figure figsize must be positive"
+                error stop "fplotlib: figure figsize must be positive"
             fig_w_in = figsize(1)
             fig_h_in = figsize(2)
         end if
         if (present(dpi)) then
-            if (dpi <= 0.0_dp) error stop "fplot: figure dpi must be positive"
+            if (dpi <= 0.0_dp) error stop "fplotlib: figure dpi must be positive"
             fig_dpi = dpi
         end if
     end subroutine figure
@@ -450,7 +450,7 @@ contains
             call set_cycle(["#000000", "#545454", "#7f7f7f", "#b0b0b0", &
                             "#d4d4d4"])
         case default
-            error stop "fplot: unknown style"
+            error stop "fplotlib: unknown style"
         end select
     end subroutine style_use
 
@@ -542,7 +542,7 @@ contains
         if (present(wspace)) fig_wspace = wspace
         if (present(hspace)) fig_hspace = hspace
         if (fig_right <= fig_left .or. fig_top <= fig_bottom) &
-            error stop "fplot: subplots_adjust left<right and bottom<top required"
+            error stop "fplotlib: subplots_adjust left<right and bottom<top required"
         call layout_grid()
     end subroutine subplots_adjust
 
@@ -576,7 +576,7 @@ contains
         integer, intent(in) :: m, n, i
 
         if (m < 1 .or. n < 1 .or. i < 1 .or. i > m * n) then
-            print *, "fplot: invalid subplot indices: m=", m, " n=", n, " i=", i
+            print *, "fplotlib: invalid subplot indices: m=", m, " n=", n, " i=", i
             error stop
         end if
 
@@ -742,7 +742,7 @@ contains
         if (present(rowspan)) rs = max(1, rowspan)
         if (present(colspan)) cs = max(1, colspan)
         if (shape(1) < 1 .or. shape(2) < 1) then
-            print *, "fplot: invalid subplot2grid shape:", shape
+            print *, "fplotlib: invalid subplot2grid shape:", shape
             error stop
         end if
 
@@ -2278,8 +2278,8 @@ contains
 
         call ensure_fig()
         if (ax(cur_i)%n_series < 1) &
-            error stop "fplot: set_zorder needs something drawn first"
-        if (z < 0.0_dp) error stop "fplot: zorder must not be negative"
+            error stop "fplotlib: set_zorder needs something drawn first"
+        if (z < 0.0_dp) error stop "fplotlib: zorder must not be negative"
         ax(cur_i)%series(ax(cur_i)%n_series)%zorder = z
     end subroutine set_zorder
 
@@ -2448,14 +2448,14 @@ contains
         case ("symlog")
             s%kind = SCALE_SYMLOG
         case default
-            error stop "fplot: unknown scale, expected linear, log or symlog"
+            error stop "fplotlib: unknown scale, expected linear, log or symlog"
         end select
         if (present(linthresh)) then
-            if (linthresh <= 0.0_dp) error stop "fplot: linthresh must be positive"
+            if (linthresh <= 0.0_dp) error stop "fplotlib: linthresh must be positive"
             s%linthresh = linthresh
         end if
         if (present(linscale)) then
-            if (linscale <= 0.0_dp) error stop "fplot: linscale must be positive"
+            if (linscale <= 0.0_dp) error stop "fplotlib: linscale must be positive"
             s%linscale = linscale
         end if
     end function make_scale
@@ -4321,12 +4321,12 @@ contains
             case ("Z", "z")
                 v(j) = VERB_CLOSE
             case default
-                print *, "fplot: add_path: unknown code ", codes(j:j)
+                print *, "fplotlib: add_path: unknown code ", codes(j:j)
                 error stop
             end select
         end do
         if (np < 2 .or. np > min(size(x), size(y))) then
-            print *, "fplot: add_path: codes need", np, "points, given", &
+            print *, "fplotlib: add_path: codes need", np, "points, given", &
                 min(size(x), size(y))
             error stop
         end if
@@ -4550,7 +4550,7 @@ contains
                 dox = .false.
             case ("both")
             case default
-                error stop "fplot: tick_params axis must be x, y or both"
+                error stop "fplotlib: tick_params axis must be x, y or both"
             end select
         end if
 
@@ -4563,7 +4563,7 @@ contains
             case ("inout")
                 d = 0.0_dp
             case default
-                error stop "fplot: tick direction must be in, out or inout"
+                error stop "fplotlib: tick direction must be in, out or inout"
             end select
             if (dox) ax(cur_i)%xtick_dir = d
             if (doy) ax(cur_i)%ytick_dir = d
@@ -4614,7 +4614,7 @@ contains
             ax(cur_i)%xmargin = 0.05_dp
             ax(cur_i)%ymargin = 0.05_dp
         case default
-            error stop "fplot: unknown axis mode"
+            error stop "fplotlib: unknown axis mode"
         end select
     end subroutine axis
 
@@ -4652,7 +4652,7 @@ contains
                 dox = .false.
             case ("both")
             case default
-                error stop "fplot: autoscale axis must be x, y or both"
+                error stop "fplotlib: autoscale axis must be x, y or both"
             end select
         end if
 
@@ -4691,7 +4691,7 @@ contains
         real(dp), intent(in) :: ratio
         character(len=*), intent(in), optional :: adjustable
         call ensure_fig()
-        if (ratio <= 0.0_dp) error stop "fplot: aspect ratio must be positive"
+        if (ratio <= 0.0_dp) error stop "fplotlib: aspect ratio must be positive"
         ax(cur_i)%aspect = ratio
         ax(cur_i)%aspect_datalim = .false.
         if (present(adjustable)) then
@@ -4701,7 +4701,7 @@ contains
             case ("datalim")
                 ax(cur_i)%aspect_datalim = .true.
             case default
-                error stop "fplot: adjustable must be box or datalim"
+                error stop "fplotlib: adjustable must be box or datalim"
             end select
         end if
     end subroutine set_aspect
@@ -4877,7 +4877,7 @@ contains
                 ! because its tick labels sit under it too.
                 ax(cur_i)%cbar_pad = 0.15_dp
             case default
-                error stop "fplot: colorbar orientation must be vertical or horizontal"
+                error stop "fplotlib: colorbar orientation must be vertical or horizontal"
             end select
         end if
         if (present(fraction)) ax(cur_i)%cbar_frac = fraction
@@ -5959,7 +5959,7 @@ contains
     end function norm_from_str
 
     ! ------------------------------------------------------------------
-    ! A 3D axes. The camera lives in fplot_proj3d; what is here is what
+    ! A 3D axes. The camera lives in fplotlib_proj3d; what is here is what
     ! the camera is pointed at: the limits, the three back panes and their
     ! grids, the three axis lines with ticks and labels, and the data.
     !
@@ -5990,10 +5990,10 @@ contains
     ! so an unsupported extension is a hard error rather than a silent default.
     subroutine reject_ext(filename)
         character(len=*), intent(in) :: filename
-        print *, "fplot: cannot write ", trim(filename)
-        print *, "fplot: supported formats are .svg, .pdf, .eps and .png, not ." &
+        print *, "fplotlib: cannot write ", trim(filename)
+        print *, "fplotlib: supported formats are .svg, .pdf, .eps and .png, not ." &
             //file_ext(filename)
-        error stop "fplot: unsupported savefig format"
+        error stop "fplotlib: unsupported savefig format"
     end subroutine reject_ext
 
     ! dpi sizes the raster in the PNG backend. The vector formats ignore it,
@@ -6010,7 +6010,7 @@ contains
         ! the figure's own dpi is what figure(dpi=) set and outlives the call.
         saved_dpi = fig_dpi
         if (present(dpi)) then
-            if (dpi <= 0.0_dp) error stop "fplot: savefig dpi must be positive"
+            if (dpi <= 0.0_dp) error stop "fplotlib: savefig dpi must be positive"
             fig_dpi = dpi
         end if
         select case (file_ext(filename))
@@ -6041,7 +6041,7 @@ contains
             open (newunit=u, file=trim(filename), status="replace", action="write", &
                   form="formatted", iostat=ios)
             if (ios /= 0) then
-                print *, "fplot: failed to open ", trim(filename)
+                print *, "fplotlib: failed to open ", trim(filename)
                 return
             end if
             write (u, "(A)") data
@@ -6073,7 +6073,7 @@ contains
 
         if (anim_n > 0) then
             if (r%pw /= anim_w .or. r%ph /= anim_h) then
-                print *, "fplot: add_frame ignored, frame size changed"
+                print *, "fplotlib: add_frame ignored, frame size changed"
                 return
             end if
         end if
@@ -6112,16 +6112,16 @@ contains
         integer :: delay
 
         if (anim_n == 0) then
-            print *, "fplot: no frames; call add_frame before save_animation"
+            print *, "fplotlib: no frames; call add_frame before save_animation"
             return
         end if
         if (file_ext(filename) /= "gif") then
-            print *, "fplot: save_animation writes .gif, not .", file_ext(filename)
+            print *, "fplotlib: save_animation writes .gif, not .", file_ext(filename)
             return
         end if
         rate = 5.0_dp
         if (present(fps)) then
-            if (fps <= 0.0_dp) error stop "fplot: save_animation fps must be positive"
+            if (fps <= 0.0_dp) error stop "fplotlib: save_animation fps must be positive"
             rate = fps
         end if
         rep = .true.
@@ -6143,9 +6143,9 @@ contains
         ! File backend. In LFortran Jupyter notebooks, prefer:
         !   use lfortran_display
         !   call display_data("image/svg+xml", render_svg())
-        call savefig("fplot_show.svg")
-        print *, "fplot: wrote fplot_show.svg"
-        print *, "fplot: for Jupyter use display_data('image/svg+xml', render_svg())"
+        call savefig("fplotlib_show.svg")
+        print *, "fplotlib: wrote fplotlib_show.svg"
+        print *, "fplotlib: for Jupyter use display_data('image/svg+xml', render_svg())"
     end subroutine show
 
-end module fplot
+end module fplotlib

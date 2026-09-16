@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Compare fplot SVGs to matplotlib references (visual/structural, not bit-identical)."""
+"""Compare fplotlib SVGs to matplotlib references (visual/structural, not bit-identical)."""
 
 from __future__ import annotations
 
@@ -74,7 +74,7 @@ def count_tags(svg: str, tag: str) -> int:
 
 
 # bbox_inches="tight" crops to the extent of the drawn text, which matplotlib
-# gets from real glyph metrics and fplot estimates from font size. The canvas
+# gets from real glyph metrics and fplotlib estimates from font size. The canvas
 # is therefore close but not exact, so those cases get a relative tolerance.
 LOOSE_CANVAS = {"savefig_tight": 0.01}
 
@@ -87,7 +87,7 @@ def tol(name: str, expected: float) -> float:
 
 def main() -> int:
     hard_fail = 0
-    print("Comparing fplot SVGs to matplotlib references")
+    print("Comparing fplotlib SVGs to matplotlib references")
     print("=" * 60)
 
     for name in CASES:
@@ -100,7 +100,7 @@ def main() -> int:
             hard_fail += 1
             continue
         if not out_path.exists():
-            print(f"  MISSING fplot: {out_path}")
+            print(f"  MISSING fplotlib: {out_path}")
             hard_fail += 1
             continue
 
@@ -111,7 +111,7 @@ def main() -> int:
         ow, oh, ovb = parse_canvas(out)
 
         print(f"  matplotlib canvas: width={rw} height={rh} viewBox={rvb}")
-        print(f"  fplot canvas:      width={ow} height={oh} viewBox={ovb}")
+        print(f"  fplotlib canvas:      width={ow} height={oh} viewBox={ovb}")
 
         # The matplotlib reference defines the expected canvas, so cases with a
         # non-default figsize are checked against their own reference.
@@ -129,7 +129,7 @@ def main() -> int:
                 print(f"  HARD: could not read {label} from the matplotlib reference")
                 hard_fail += 1
             elif b is None or abs(a - b) > tol(name, a):
-                print(f"  HARD: fplot {label}={b} expected ~{a}")
+                print(f"  HARD: fplotlib {label}={b} expected ~{a}")
                 hard_fail += 1
             else:
                 print(f"  ok: {label} matches expected {a}")
@@ -139,7 +139,7 @@ def main() -> int:
             f"use={count_tags(ref, 'use')} text≈{ref.count('<text')}"
         )
         print(
-            f"  elements fplot: path={count_tags(out, 'path')} "
+            f"  elements fplotlib: path={count_tags(out, 'path')} "
             f"rect={count_tags(out, 'rect')} use={count_tags(out, 'use')} "
             f"text={out.count('<text')}"
         )
@@ -147,13 +147,13 @@ def main() -> int:
         # Both now group each axes as <g id="axes_N">, so the same pattern
         # reads either file.
         n_ax_mpl = len(re.findall(r'<g id="axes_\d+"', ref))
-        n_ax_fplot = len(re.findall(r'<g id="axes_\d+"', out))
-        if n_ax_mpl == n_ax_fplot:
+        n_ax_fplotlib = len(re.findall(r'<g id="axes_\d+"', out))
+        if n_ax_mpl == n_ax_fplotlib:
             print(f"  ok: axes count matches ({n_ax_mpl})")
         else:
-            print(f"  HARD: axes count mpl={n_ax_mpl} fplot={n_ax_fplot}")
+            print(f"  HARD: axes count mpl={n_ax_mpl} fplotlib={n_ax_fplotlib}")
             hard_fail += 1
-        print(f"  sizes: mpl={len(ref)} bytes, fplot={len(out)} bytes")
+        print(f"  sizes: mpl={len(ref)} bytes, fplotlib={len(out)} bytes")
 
         # Optional raster compare
         try:
@@ -181,8 +181,8 @@ def main() -> int:
 
     print("\n" + "=" * 60)
     print("Known intentional differences:")
-    print("  - matplotlib embeds DejaVu glyph paths; fplot uses <text>")
-    print("  - matplotlib uses path IDs/metadata; fplot uses simpler SVG")
+    print("  - matplotlib embeds DejaVu glyph paths; fplotlib uses <text>")
+    print("  - matplotlib uses path IDs/metadata; fplotlib uses simpler SVG")
     print("  - tick locations may differ slightly (nice-number algorithm)")
 
     if hard_fail:
