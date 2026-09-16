@@ -1,7 +1,7 @@
 [workspace]
 authors = ["Ondřej Čertík <ondrej@certik.us>"]
 channels = ["conda-forge"]
-name = "fplot"
+name = "fplotlib"
 platforms = ["osx-arm64", "linux-64"]
 version = "0.1.0"
 

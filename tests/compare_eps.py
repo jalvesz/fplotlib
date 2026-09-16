@@ -1,4 +1,4 @@
-"""Compare fplot's EPS files to matplotlib's by rasterizing both.
+"""Compare fplotlib's EPS files to matplotlib's by rasterizing both.
 
 Same argument as tests/compare_pdfs.py: PostScript is a program, not a
 picture, so two files that draw the same page share almost nothing textually.
@@ -6,8 +6,8 @@ Both sides go through Ghostscript and the images are compared.
 
 Two differences from the PDF comparison are expected and are properties of
 the format, not defects. Text is a different typeface, because matplotlib
-embeds a DejaVu Sans subset and fplot names the base-13 Helvetica; and
-PostScript has no transparency, so fplot composites every alpha against the
+embeds a DejaVu Sans subset and fplotlib names the base-13 Helvetica; and
+PostScript has no transparency, so fplotlib composites every alpha against the
 page colour while matplotlib simply drops it. The limit below is set to
 allow both and still catch a page that is actually drawn wrongly.
 
@@ -36,7 +36,7 @@ MEAN_LIMIT = 20.0
 SIZE_TOLERANCE = {"savefig_tight": 0.02}
 
 # Cases where the whole page is dominated by translucent fills. matplotlib
-# draws them fully opaque, since PostScript cannot blend; fplot composites
+# draws them fully opaque, since PostScript cannot blend; fplotlib composites
 # them against the page colour instead, so the figure keeps the appearance it
 # has in SVG and PNG. That is a deliberate improvement, not a defect, and it
 # is what these two cases measure, so they get their own limits.
@@ -115,7 +115,7 @@ def main() -> int:
         print("no EPS files to compare; run: pixi run test-flang")
         return 1
 
-    print("Comparing fplot EPS files to matplotlib references\n")
+    print("Comparing fplotlib EPS files to matplotlib references\n")
     results.sort(key=lambda r: -r[1])
     failed = [r for r in results if r[1] < 0 or r[1] > limit(Path(r[0]).stem)]
 

@@ -1,5 +1,5 @@
-! Style parsing and color/marker/linestyle helpers for fplot.
-module fplot_style
+! Style parsing and color/marker/linestyle helpers for fplotlib.
+module fplotlib_style
     implicit none
     private
 
@@ -259,4 +259,4 @@ contains
         end if
     end subroutine parse_fmt
 
-end module fplot_style
+end module fplotlib_style

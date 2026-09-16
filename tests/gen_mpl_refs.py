@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate matplotlib reference SVGs matching fplot test cases."""
+"""Generate matplotlib reference SVGs matching fplotlib test cases."""
 
 from __future__ import annotations
 
@@ -273,7 +273,7 @@ def main() -> None:
     ax_bot.grid(True)
     ax_bot.legend()
 
-    fig.suptitle("fplot subplots")
+    fig.suptitle("fplotlib subplots")
     save(fig, "subplots_2x1")
 
     # 8 subplots_2x2
@@ -294,7 +294,7 @@ def main() -> None:
     axs[1, 1].set_title("semilogx panel")
     axs[1, 1].grid(True)
 
-    fig.suptitle("fplot 2x2 subplots")
+    fig.suptitle("fplotlib 2x2 subplots")
     save(fig, "subplots_2x2")
 
     # 9 markers_gallery
@@ -1260,7 +1260,7 @@ def main() -> None:
     axs[0].set_title("margins")
     axs[1].plot(x, y)
     # matplotlib defers autoscaling to the draw, so the limits only exist
-    # once something has drawn them; fplot computes them on demand, so the
+    # once something has drawn them; fplotlib computes them on demand, so the
     # two agree only after a draw is forced here.
     fig.canvas.draw()
     axs[1].autoscale(False)

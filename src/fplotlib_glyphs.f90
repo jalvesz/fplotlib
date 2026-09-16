@@ -1,4 +1,4 @@
-! fplot_glyphs — DejaVu Sans outlines for the backends that draw text
+! fplotlib_glyphs — DejaVu Sans outlines for the backends that draw text
 ! themselves.
 !
 ! A raster file cannot defer to a font the way SVG and PDF do, so the PNG
@@ -6,7 +6,7 @@
 ! library. They are the ones matplotlib itself draws with.
 !
 ! What is compiled in is what the font stores: quadratic contours in
-! integer font units, packed into one base85 string in fplot_glyphs_data
+! integer font units, packed into one base85 string in fplotlib_glyphs_data
 ! (written by tools/gen_glyphs.py) and unpacked here the first time a
 ! glyph is asked for. Keeping the font's own representation rather than
 ! the cubics the rendering API wants is what makes the data 40 KB of
@@ -41,7 +41,7 @@
 !
 ! Coordinates are in font units; divide by EM and multiply by the point
 ! size. glyph_verbs and glyph_points hand back cubics, matching
-! fplot_render's path verbs, so the backend fills a glyph with exactly
+! fplotlib_render's path verbs, so the backend fills a glyph with exactly
 ! the code that fills any other path: a quadratic is elevated exactly,
 ! its control points landing at p0 + 2/3 (q - p0) and p2 + 2/3 (q - p2),
 ! and an on-curve point that TrueType leaves implied between two
@@ -49,11 +49,11 @@
 !
 ! Four faces are stacked in one table: regular, bold, oblique and bold
 ! oblique, selected by the face argument.
-module fplot_glyphs
+module fplotlib_glyphs
     use iso_fortran_env, only: int16, int64
-    use fplot_style, only: dp
-    use fplot_render, only: VERB_MOVE, VERB_LINE, VERB_CUBIC, VERB_CLOSE
-    use fplot_glyphs_data, only: EM, ASCENT, DESCENT, XHEIGHT, &
+    use fplotlib_style, only: dp
+    use fplotlib_render, only: VERB_MOVE, VERB_LINE, VERB_CUBIC, VERB_CLOSE
+    use fplotlib_glyphs_data, only: EM, ASCENT, DESCENT, XHEIGHT, &
                                  ALPHABET, BLOB_ROWS, BLOB_LEN, &
                                  NCH, NFACE, NSLOT, NOUT, NCONT, NPT, &
                                  NBLK, BLK_FIRST, BLK_LAST, BLK_OFF
@@ -310,7 +310,7 @@ contains
         call build_code()
         BPOS = 0
 
-        if (get_gamma() /= NOUT) error stop "fplot_glyphs: blob is not the one this module expects"
+        if (get_gamma() /= NOUT) error stop "fplotlib_glyphs: blob is not the one this module expects"
 
         ip = 0
         ic = 0
@@ -364,7 +364,7 @@ contains
         end do
 
         if (ip /= NPT .or. ic /= NCONT .or. used /= NOUT) then
-            error stop "fplot_glyphs: blob does not fill the tables"
+            error stop "fplotlib_glyphs: blob does not fill the tables"
         end if
         deallocate (BUF)
     end subroutine unpack
@@ -457,7 +457,7 @@ contains
                 return
             end if
         end do
-        error stop "fplot_glyphs: the glyph blob has a code this module cannot read"
+        error stop "fplotlib_glyphs: the glyph blob has a code this module cannot read"
     end function get_class
 
     ! One coordinate delta: its magnitude class, the bits under the
@@ -477,4 +477,4 @@ contains
         end if
     end function get_delta
 
-end module fplot_glyphs
+end module fplotlib_glyphs

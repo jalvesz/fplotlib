@@ -1,30 +1,30 @@
-! fplot_draw - turning a figure into a picture.
+! fplotlib_draw - turning a figure into a picture.
 !
 ! Everything here reads the figure state and writes to a renderer: the layout
 ! of the axes on the canvas, the mapping from data to canvas coordinates, the
 ! ticks and their labels, and one renderer for each kind of series. Nothing
 ! here changes what is plotted, which is what keeps this apart from the
-! plotting API in fplot.f90.
-module fplot_draw
-    use fplot_colors
-    use fplot_style
-    use fplot_scale
-    use fplot_cmap
-    use fplot_contour
-    use fplot_tri, only: delaunay
-    use fplot_ticks
-    use fplot_svg
-    use fplot_render
-    use fplot_backend_svg
-    use fplot_backend_pdf
-    use fplot_backend_eps
-    use fplot_gif, only: gif_encode
-    use fplot_proj3d
-    use fplot_backend_png
-    use fplot_mathtext
-    use fplot_dates
-    use fplot_state
-    use fplot_artist
+! plotting API in fplotlib.f90.
+module fplotlib_draw
+    use fplotlib_colors
+    use fplotlib_style
+    use fplotlib_scale
+    use fplotlib_cmap
+    use fplotlib_contour
+    use fplotlib_tri, only: delaunay
+    use fplotlib_ticks
+    use fplotlib_svg
+    use fplotlib_render
+    use fplotlib_backend_svg
+    use fplotlib_backend_pdf
+    use fplotlib_backend_eps
+    use fplotlib_gif, only: gif_encode
+    use fplotlib_proj3d
+    use fplotlib_backend_png
+    use fplotlib_mathtext
+    use fplotlib_dates
+    use fplotlib_state
+    use fplotlib_artist
     implicit none
     public
 
@@ -4415,7 +4415,7 @@ contains
                 vw = vw - vx + bpad
                 vh = vh - vy + bpad
             else if (len_trim(bbox_inches) > 0) then
-                error stop "fplot: bbox_inches must be 'tight'"
+                error stop "fplotlib: bbox_inches must be 'tight'"
             end if
         end if
 
@@ -4510,4 +4510,4 @@ contains
         end do
     end function lower
 
-end module fplot_draw
+end module fplotlib_draw

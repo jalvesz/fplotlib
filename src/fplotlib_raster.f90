@@ -1,4 +1,4 @@
-! fplot_raster — an antialiased scanline rasterizer.
+! fplotlib_raster — an antialiased scanline rasterizer.
 !
 ! This is the part PNG has that the vector backends get for free: something
 ! has to decide what colour each pixel is. It is kept separate from the PNG
@@ -10,22 +10,22 @@
 ! accumulation buffer; a running sum along the row then turns those deltas into
 ! coverage. Two things recommend it. The antialiasing is analytic, so a shallow
 ! diagonal comes out smooth instead of stepping between a fixed number of
-! sample levels, which is what matplotlib's Agg does and therefore what fplot
+! sample levels, which is what matplotlib's Agg does and therefore what fplotlib
 ! has to do to look the same. And the running sum *is* the winding number, so
 ! the nonzero fill rule falls out of the algorithm rather than needing sorted
 ! crossing lists. Overlapping contours of the same orientation saturate to one
 ! and opposite orientations cancel, which is exactly nonzero.
 !
 ! The catch, and the reason to say so plainly: this gives nonzero only. Even-odd
-! would need a different accumulator. fplot never asks for it.
+! would need a different accumulator. fplotlib never asks for it.
 !
 ! Everything else reduces to filling a path. Strokes are converted to outlines
 ! and filled; text is glyph outlines and filled; markers are a shape filled once
 ! per point. There is one rasterizer here, not five.
 
-module fplot_raster
-    use fplot_style, only: dp
-    use fplot_render, only: paint_t, clip_t, VERB_MOVE, VERB_LINE, VERB_CUBIC, &
+module fplotlib_raster
+    use fplotlib_style, only: dp
+    use fplotlib_render, only: paint_t, clip_t, VERB_MOVE, VERB_LINE, VERB_CUBIC, &
                             VERB_CLOSE, CAP_BUTT, CAP_ROUND, CAP_SQUARE, &
                             JOIN_MITER, JOIN_ROUND, JOIN_BEVEL, MAX_DASH
     implicit none
@@ -252,7 +252,7 @@ contains
     ! A one point gridline landing across two pixel columns comes out as two
     ! half-dark columns, which reads as blurred rather than thin. Matplotlib
     ! avoids this by rounding paths made only of horizontal and vertical
-    ! segments onto the pixel grid, and since fplot is trying to look like
+    ! segments onto the pixel grid, and since fplotlib is trying to look like
     ! matplotlib it has to do the same thing by the same rule: axis spines,
     ! gridlines, ticks and rectangles are exactly the paths this catches.
     !
@@ -722,4 +722,4 @@ contains
         end do
     end subroutine blit_image
 
-end module fplot_raster
+end module fplotlib_raster

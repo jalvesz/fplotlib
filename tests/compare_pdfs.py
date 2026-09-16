@@ -1,4 +1,4 @@
-"""Compare fplot's PDFs to matplotlib's by rasterizing both.
+"""Compare fplotliblib's PDFs to matplotlib's by rasterizing both.
 
 A PDF cannot be compared as bytes and is not worth comparing as structure:
 two files can describe the same page with completely different operators. So
@@ -8,7 +8,7 @@ the same.
 
 Text is the expected difference and it is a real one, not an artifact of the
 measurement. Matplotlib embeds a subset of DejaVu Sans and draws text with
-the same outlines it uses everywhere else. fplot's PDF backend refers to the
+the same outlines it uses everywhere else. fplotliblib's PDF backend refers to the
 base-14 Helvetica instead, so the file needs no embedded font at all, but the
 glyphs are a different typeface and are spaced by Helvetica's widths while
 the surrounding layout was computed from DejaVu's. Everything that is not
@@ -114,7 +114,7 @@ def main() -> int:
         print("no PDFs to compare; run: pixi run test-flang")
         return 1
 
-    print("Comparing fplot PDFs to matplotlib references\n")
+    print("Comparing fplotliblib PDFs to matplotlib references\n")
     results.sort(key=lambda r: -r[1])
     failed = [r for r in results if r[1] < 0 or r[1] > MEAN_LIMIT]
 

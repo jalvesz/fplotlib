@@ -1,4 +1,4 @@
-name = "fplot"
+name = "fplotlib"
 version = "0.1.0"
 description = "Pure Fortran pylab-style plotting: SVG, PNG, PDF, EPS and GIF"
 license = "MIT"

@@ -1,7 +1,7 @@
-"""Compare fplot's animated GIF to matplotlib's, frame by frame.
+"""Compare fplotlib's animated GIF to matplotlib's, frame by frame.
 
 The two files will never be byte-identical: both sides pick their own
-256-colour palette, and fplot picks one palette for the whole animation
+256-colour palette, and fplotlib picks one palette for the whole animation
 where Pillow picks one per frame. So the comparison decodes both and asks
 the only question worth asking, whether frame k looks like frame k.
 

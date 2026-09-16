@@ -1,6 +1,6 @@
-! SVG string builder for fplot.
-module fplot_svg
-    use fplot_style, only: dp, utf8_next
+! SVG string builder for fplotlib.
+module fplotlib_svg
+    use fplotlib_style, only: dp, utf8_next
     implicit none
     private
 
@@ -185,4 +185,4 @@ contains
         end do
     end subroutine xml_escape_to
 
-end module fplot_svg
+end module fplotlib_svg
