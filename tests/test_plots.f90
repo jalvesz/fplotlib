@@ -1,5 +1,5 @@
 program test_plots
-    use fplot
+    use fplotlib
     use test_fingerprint, only: fp_check_png, fp_check_gif, fp_finish
     implicit none
     integer :: fig1
@@ -201,7 +201,7 @@ program test_plots
     call grid(.true.)
     call legend()
 
-    call suptitle("fplot subplots")
+    call suptitle("fplotlib subplots")
     call save_all("subplots_2x1")
 
     ! 8) subplots_2x2 (four panels; also checks per-axes log scale)
@@ -226,7 +226,7 @@ program test_plots
     call title("semilogx panel")
     call grid(.true.)
 
-    call suptitle("fplot 2x2 subplots")
+    call suptitle("fplotlib 2x2 subplots")
     call save_all("subplots_2x2")
 
     ! 9) markers gallery (one row per marker code)

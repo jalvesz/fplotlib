@@ -1,4 +1,4 @@
-! fplot_proj3d — the 3D camera: the matrix mplot3d builds and applies.
+! fplotlib_proj3d — the 3D camera: the matrix mplot3d builds and applies.
 !
 ! Everything here is matplotlib's mpl_toolkits/mplot3d/proj3d.py, in the same
 ! order and with the same constants, because the point of a 3D plot in this
@@ -8,9 +8,9 @@
 ! world so the camera is at the origin, and divide by depth.
 !
 ! The module is pure arithmetic, with no idea what an axes or a series is,
-! which is why it sits outside fplot.f90 rather than inside it.
+! which is why it sits outside fplotlib.f90 rather than inside it.
 
-module fplot_proj3d
+module fplotlib_proj3d
     implicit none
     private
 
@@ -120,4 +120,4 @@ contains
         pz = q(3)/q(4)
     end subroutine proj3d_point
 
-end module fplot_proj3d
+end module fplotlib_proj3d

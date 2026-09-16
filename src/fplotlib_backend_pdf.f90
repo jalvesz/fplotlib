@@ -20,17 +20,17 @@
 ! reader has, so nothing is embedded. That has one real consequence: PDF
 ! cannot ask a viewer to centre a string the way SVG's text-anchor does, so
 ! this backend has to know how wide the text is, and the Helvetica widths
-! below are what it measures with. fplot lays out to DejaVu Sans metrics, so
+! below are what it measures with. fplotlib lays out to DejaVu Sans metrics, so
 ! centred labels can sit a fraction of a point off where the SVG puts them.
 ! Embedding DejaVu and its real widths is the fix, and is what matplotlib
 ! does by default.
-module fplot_backend_pdf
-    use fplot_style, only: dp
-    use fplot_render
-    use fplot_svg, only: svg_builder, builder_init, builder_append, &
+module fplotlib_backend_pdf
+    use fplotlib_style, only: dp
+    use fplotlib_render
+    use fplotlib_svg, only: svg_builder, builder_init, builder_append, &
                          builder_get, fmt_num
-    use fplot_png, only: zlib_compress
-    use fplot_textpath, only: text_needs_outline, text_path, text_path_width
+    use fplotlib_png, only: zlib_compress
+    use fplotlib_textpath, only: text_needs_outline, text_path, text_path_width
     implicit none
     private
 
@@ -728,4 +728,4 @@ contains
         end if
     end function pdf_bytes
 
-end module fplot_backend_pdf
+end module fplotlib_backend_pdf

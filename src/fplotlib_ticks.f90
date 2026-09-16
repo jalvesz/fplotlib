@@ -1,6 +1,6 @@
 ! Nice tick generation for linear and log axes.
-module fplot_ticks
-    use fplot_style, only: dp
+module fplotlib_ticks
+    use fplotlib_style, only: dp
     implicit none
     private
 
@@ -695,4 +695,4 @@ contains
         n = len_trim(s)
     end subroutine format_grouped
 
-end module fplot_ticks
+end module fplotlib_ticks

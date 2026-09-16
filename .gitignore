@@ -13,7 +13,7 @@
 tests/out/
 tests/refs/
 demo.svg
-fplot_show.svg
+fplotlib_show.svg
 *.svg
 
 # python

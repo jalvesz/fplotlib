@@ -1,5 +1,5 @@
 program demo
-    use fplot
+    use fplotlib
     implicit none
     integer, parameter :: n = 200
     real(dp) :: x(n), y1(n), y2(n)
@@ -14,7 +14,7 @@ program demo
 
     call plot(x, y1, "b-", label="damped sin", lw=2.0_dp)
     call plot(x, y2, "r--", label="damped cos")
-    call title("fplot demo")
+    call title("fplotlib demo")
     call xlabel("time")
     call ylabel("amplitude")
     call grid(.true.)

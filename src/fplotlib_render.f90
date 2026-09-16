@@ -1,4 +1,4 @@
-! fplot_render — the backend rendering API.
+! fplotlib_render — the backend rendering API.
 !
 ! One abstract renderer that SVG, PNG, PDF and EPS each implement. The plotting
 ! code above it never learns which one it is talking to, so a new output format
@@ -62,8 +62,8 @@
 ! to doing nothing, because doing nothing is the correct implementation for a
 ! format without a document tree, not a lazy one. See the note on groups.
 
-module fplot_render
-    use fplot_style, only: dp
+module fplotlib_render
+    use fplotlib_style, only: dp
     implicit none
     private
 
@@ -103,7 +103,7 @@ module fplot_render
 
     integer, parameter :: MAX_DASH = 8
 
-    ! Rectangular clip. fplot only ever clips series to the axes box, and a
+    ! Rectangular clip. fplotlib only ever clips series to the axes box, and a
     ! rectangle is the one clip shape all four formats support cheaply.
     ! Carried inside the paint so that drawing stays stateless; a backend is
     ! free to notice a run of identical clips and emit one SVG <g> for them.
@@ -307,4 +307,4 @@ contains
         class(renderer_t), intent(inout) :: self
     end subroutine end_group
 
-end module fplot_render
+end module fplotlib_render

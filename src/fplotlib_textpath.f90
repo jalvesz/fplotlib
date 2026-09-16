@@ -6,9 +6,9 @@
 ! font, the string is drawn: the same DejaVu outlines the PNG backend
 ! fills, in canvas coordinates, ready for draw_path. It is only reached
 ! for strings that need it, so ordinary labels stay selectable text.
-module fplot_textpath
-    use fplot_style, only: dp, utf8_next
-    use fplot_glyphs, only: EM, glyph_advance, glyph_verbs, glyph_points
+module fplotlib_textpath
+    use fplotlib_style, only: dp, utf8_next
+    use fplotlib_glyphs, only: EM, glyph_advance, glyph_verbs, glyph_points
     implicit none
     private
 
@@ -126,4 +126,4 @@ contains
         end do
     end subroutine outline_size
 
-end module fplot_textpath
+end module fplotlib_textpath

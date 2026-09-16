@@ -5,8 +5,8 @@
 ! numbers mean. This module is that arithmetic: the conversion both ways,
 ! a locator that steps in years, months, days, hours, minutes or seconds,
 ! and the formats matplotlib's AutoDateFormatter uses for each of them.
-module fplot_dates
-    use fplot_style, only: dp
+module fplotlib_dates
+    use fplotlib_style, only: dp
     implicit none
     private
 
@@ -252,4 +252,4 @@ contains
         s(1:n) = tmp(1:n)
     end subroutine format_date
 
-end module fplot_dates
+end module fplotlib_dates

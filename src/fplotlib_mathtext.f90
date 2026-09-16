@@ -10,9 +10,9 @@
 ! Only the layout is TeX. The glyphs are the ordinary text font, sloped
 ! for the letters of a math fragment and upright for everything else,
 ! which is TeX's own rule and matplotlib's.
-module fplot_mathtext
-    use fplot_glyphs, only: EM, glyph_advance
-    use fplot_style, only: utf8_next, utf8_char
+module fplotlib_mathtext
+    use fplotlib_glyphs, only: EM, glyph_advance
+    use fplotlib_style, only: utf8_next, utf8_char
     implicit none
     private
 
@@ -622,4 +622,4 @@ contains
         w = w*size/EM
     end function run_width
 
-end module fplot_mathtext
+end module fplotlib_mathtext

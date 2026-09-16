@@ -1,17 +1,17 @@
-! fplot_artist - the drawing primitives every plot type is built from.
+! fplotlib_artist - the drawing primitives every plot type is built from.
 !
 ! Nothing here knows what is being drawn: these take a renderer and points
 ! on the canvas and put strokes, fills, markers and text on it. The plot
 ! types turn data into calls to these, which is the division matplotlib
 ! draws between its artists and its backends.
-module fplot_artist
-    use fplot_colors
-    use fplot_style
-    use fplot_render
-    use fplot_state
-    use fplot_mathtext
-    use fplot_state
-    use fplot_state
+module fplotlib_artist
+    use fplotlib_colors
+    use fplotlib_style
+    use fplotlib_render
+    use fplotlib_state
+    use fplotlib_mathtext
+    use fplotlib_state
+    use fplotlib_state
     implicit none
     public
 
@@ -65,7 +65,7 @@ contains
         end do
     end subroutine sort_in_place
 
-    ! fplot carries colors as "#rrggbb" because that is what a format string
+    ! fplotlib carries colors as "#rrggbb" because that is what a format string
     ! and a colormap table both produce; the renderer wants components.
     pure function hex_rgb(s) result(c)
         character(len=*), intent(in) :: s
@@ -78,7 +78,7 @@ contains
     end function hex_rgb
 
     ! The clip in force for the primitives being emitted now. The rendering
-    ! API is stateless by design, but fplot draws in regions ("everything
+    ! API is stateless by design, but fplotlib draws in regions ("everything
     ! inside the axes box"), so the front end tracks the current region here
     ! and stamps it into each paint rather than passing it through fifteen
     ! layers of call.
@@ -973,4 +973,4 @@ contains
         call append_text(b, x, y, s, anchor, fontsize, rc_text_color, rot)
     end subroutine append_tick_text
 
-end module fplot_artist
+end module fplotlib_artist

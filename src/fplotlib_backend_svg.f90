@@ -1,4 +1,4 @@
-! SVG backend: the fplot_render contract written out as XML.
+! SVG backend: the fplotlib_render contract written out as XML.
 !
 ! This is the reference implementation of renderer_t and the easiest of the
 ! four to read, because SVG has a native element for almost everything the
@@ -8,15 +8,15 @@
 ! outline a thousand times.
 !
 ! Attribute order is fixed here rather than at the call site: fill first,
-! then stroke, then dashes. fplot used to spell the same paint differently
+! then stroke, then dashes. fplotlib used to spell the same paint differently
 ! depending on which helper emitted it, which made the output harder to diff
 ! than it needed to be.
-module fplot_backend_svg
-    use fplot_style, only: dp
-    use fplot_render
-    use fplot_svg, only: svg_builder, builder_init, builder_append, &
+module fplotlib_backend_svg
+    use fplotlib_style, only: dp
+    use fplotlib_render
+    use fplotlib_svg, only: svg_builder, builder_init, builder_append, &
                          builder_get, fmt_num, xml_escape_to
-    use fplot_png, only: png_encode
+    use fplotlib_png, only: png_encode
     implicit none
     private
 
@@ -572,4 +572,4 @@ contains
         call put_eol(self)
     end subroutine svg_end_group
 
-end module fplot_backend_svg
+end module fplotlib_backend_svg

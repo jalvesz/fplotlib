@@ -1,4 +1,4 @@
-! fplot_png — the PNG container: filtering, deflate and chunks.
+! fplotlib_png — the PNG container: filtering, deflate and chunks.
 !
 ! Kept apart from the rasterizer because the two have nothing to say to each
 ! other: this module turns a finished pixel buffer into file bytes and knows
@@ -14,7 +14,7 @@
 !
 ! No zlib, no libpng, nothing to link.
 
-module fplot_png
+module fplotlib_png
     implicit none
     private
 
@@ -473,4 +473,4 @@ contains
         end do
     end subroutine chunk
 
-end module fplot_png
+end module fplotlib_png

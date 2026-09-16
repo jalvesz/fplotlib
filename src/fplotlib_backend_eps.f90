@@ -23,11 +23,11 @@
 ! Text is Helvetica from the base thirty-five fonts. As in PDF, that means
 ! this backend has to measure strings itself to place centred text, and the
 ! widths it measures with are Helvetica's rather than DejaVu's.
-module fplot_backend_eps
-    use fplot_style, only: dp
-    use fplot_render
-    use fplot_textpath, only: text_needs_outline, text_path, text_path_width
-    use fplot_svg, only: svg_builder, builder_init, builder_append, &
+module fplotlib_backend_eps
+    use fplotlib_style, only: dp
+    use fplotlib_render
+    use fplotlib_textpath, only: text_needs_outline, text_path, text_path_width
+    use fplotlib_svg, only: svg_builder, builder_init, builder_append, &
                          builder_get, fmt_num
     implicit none
     private
@@ -534,7 +534,7 @@ contains
         eol = new_line("a")
         call builder_init(f)
         call builder_append(f, "%!PS-Adobe-3.0 EPSF-3.0"//eol)
-        call builder_append(f, "%%Creator: fplot"//eol)
+        call builder_append(f, "%%Creator: fplotlib"//eol)
         call builder_append(f, "%%BoundingBox: 0 0 "//int_str(ceiling(self%w)) &
                             //" "//int_str(ceiling(self%h))//eol)
         call builder_append(f, "%%HiResBoundingBox: 0 0 "//num_str(self%w) &
@@ -557,4 +557,4 @@ contains
         end if
     end function eps_bytes
 
-end module fplot_backend_eps
+end module fplotlib_backend_eps
