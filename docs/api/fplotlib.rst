@@ -1,5 +1,5 @@
-fplotlib main module
-====================
+fplotlib module
+===============
 
 .. f:module:: fplotlib
-    
+
