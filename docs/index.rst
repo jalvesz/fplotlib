@@ -9,4 +9,5 @@ fplotlib
    :caption: Contents:
 
    api/index
-   examples/index   
+   examples/index
+   auto_gallery/index   
