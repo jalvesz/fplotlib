@@ -71,6 +71,18 @@ Finally, the example runs in an empty scratch directory of its own, so it may
 write whatever it likes and should refer to its own files by plain relative
 names.  ``sphinx-build -D plot_gallery=0`` renders the pages without a Fortran
 toolchain: the examples are still parsed and highlighted, just not run.
+
+A note on the timings
+---------------------
+
+The seconds Sphinx-Gallery prints for an example -- on its page and in
+``sg_execution_times`` -- are the time the *program* took, plus the scraping of
+its pictures.  Compiling is not included.  One fpm call builds the library and
+every example together, so there is no honest way to split that cost per
+example: charging it to whichever example ran first would make that one look
+slow and would swing by a factor of five with the state of fpm's cache.  The
+build is timed as a whole and logged instead, as ``[fplotlib] fpm finished in
+...``.
 """
 
 from __future__ import annotations
@@ -156,6 +168,8 @@ class _Run:
     by_name: dict[str, Path]
     #: Every picture in the order it was written, for the trailing sweep.
     in_order: list[Path]
+    #: Seconds the program itself took, excluding everything fpm did.
+    duration: float
     #: Pictures already emitted, so no two blocks show the same figure.
     claimed: set[Path] = field(default_factory=set)
 
@@ -329,8 +343,15 @@ class FortranGallery:
         # any of them -- so one example that does not compile would otherwise be
         # reported against all of them.  _executable() then retries the examples
         # one at a time, and only the broken one is reported as failing.
+        started = time()
         process = self._fpm("build")
         self._batch_built = process.returncode == 0
+        # Reported here because it is not in any example's time: it is shared,
+        # and charging it to whichever example happened to run first would say
+        # more about the state of fpm's cache than about the example.
+        logger.info(
+            bold("[fplotlib] ") + f"fpm finished in {time() - started:.1f}s"
+        )
         if not self._batch_built:
             logger.debug(
                 "[fplotlib_gallery] the batch build failed; falling back to "
@@ -401,6 +422,11 @@ class FortranGallery:
         work_dir.mkdir(parents=True)
 
         executable = self._executable(example)
+        # Timed around the program alone. Compiling is deliberately left out:
+        # one fpm call builds the whole gallery, so whichever example ran first
+        # would otherwise be charged for the library and for all of its
+        # siblings, and the figure would swing with the state of fpm's cache.
+        started = time()
         try:
             process = subprocess.run(
                 [str(executable)],
@@ -415,6 +441,7 @@ class FortranGallery:
                 f"{example.name} did not finish within {self.timeout}s "
                 f"(fplotlib_gallery_timeout)."
             ) from exc
+        duration = time() - started
         if process.returncode != 0:
             raise FortranExampleError(
                 f"{example.name} exited with code {process.returncode}:\n\n"
@@ -435,6 +462,7 @@ class FortranGallery:
             stdout=_clean(process.stdout, process.stderr),
             by_name=by_name,
             in_order=pictures,
+            duration=duration,
         )
         self._runs[source] = run
         return run
@@ -550,15 +578,18 @@ def _execute_script(script_blocks, script_vars, gallery_conf, file_conf):
     if not script_vars["execute_script"] or not code_blocks:
         return output_blocks, 0.0
 
-    started = time()
     try:
         run = _GALLERY.run(script_vars["src_file"])
     except FortranExampleError as exc:
         output_blocks[code_blocks[-1]] = _report_failure(exc, script_vars, gallery_conf)
-        return output_blocks, time() - started
+        # An example that never ran costs nothing, as upstream reports for one
+        # that was not executed.  What a failure did cost was compiling, and
+        # that is reported against the gallery rather than against one example.
+        return output_blocks, 0.0
 
     script_vars["fplotlib_run"] = run
     last = code_blocks[-1]
+    started = time()
     for index in code_blocks:
         script_vars["fplotlib_last_block"] = index == last
         images_rst = save_figures(script_blocks[index], script_vars, gallery_conf)
@@ -566,7 +597,9 @@ def _execute_script(script_blocks, script_vars, gallery_conf, file_conf):
         if index == last and run.stdout.strip():
             captured = CODE_OUTPUT.format(indent(run.stdout, " " * 4))
         output_blocks[index] = f"\n{images_rst}\n\n{captured}\n\n\n"
-    elapsed = time() - started
+    # The program plus the scraping it caused: the work that is this example's
+    # own.  Building is excluded; see FortranGallery.run.
+    elapsed = run.duration + (time() - started)
 
     # Mirrors the upstream executor: the md5 lets the next build skip this
     # example, so it is only written once the example has actually run.
