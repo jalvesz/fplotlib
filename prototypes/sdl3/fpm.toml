@@ -1,0 +1,17 @@
+name = "fplotlib-sdl3-prototype"
+version = "0.1.0"
+license = "MIT"
+
+[build]
+auto-executables = false
+auto-examples = false
+auto-tests = false
+link = ["SDL3"]
+
+[dependencies]
+fplotlib = { path = "../.." }
+
+[[executable]]
+name = "sdl3-demo"
+source-dir = "app"
+main = "demo.f90"
