@@ -1,0 +1,4 @@
+name = "fplotlib-sdl3-consumer-test"
+
+[dependencies]
+fplotlib-sdl3 = { path = ".." }

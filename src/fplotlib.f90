@@ -50,7 +50,7 @@ module fplotlib
     public :: get_xlim, get_ylim, invert_xaxis, invert_yaxis
     public :: set_bad, set_under, set_over, set_cmap_colors
     public :: figlegend
-    public :: render_svg, render_pdf, render_png, render_eps
+    public :: render_svg, render_pdf, render_png, render_eps, render_rgb
     public :: add_frame, save_animation
     public :: axes3d, plot3d, scatter3d, plot_surface, plot_wireframe
     public :: plot_trisurf, bar3d, quiver3d, contour3d

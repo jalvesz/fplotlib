@@ -5,6 +5,10 @@
 Pure Fortran plotting library with a pylab-style API, writing SVG, PNG, PDF and EPS.
 No external graphics library: the PNG rasterizer and its font are part of fplotlib.
 
+An optional [SDL3 window backend](backends/sdl3/README.md) is available as a
+separate fpm package. The default library and its file-based `show()` do not
+require SDL3 or a C compiler.
+
 ```fortran
 use fplotlib
 call plot(x, y, "k-", label="sin")

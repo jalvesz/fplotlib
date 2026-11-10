@@ -89,6 +89,39 @@ jobs:
           name: tests-out-${{ matrix.compiler }}
           path: tests/out/
 
+  sdl3:
+    name: Optional SDL3 backend (Linux dummy video)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: fortran-lang/setup-fortran@v2.0.0-beta.13
+        with:
+          compiler: gfortran
+          version: latest
+      - uses: fortran-lang/setup-fpm@v10
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build SDL3 with dummy video driver
+        run: |
+          curl -fsSL https://github.com/libsdl-org/SDL/releases/download/release-3.4.2/SDL3-3.4.2.tar.gz | tar xz
+          cmake -S SDL3-3.4.2 -B sdl-build \
+            -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX="$RUNNER_TEMP/sdl3" \
+            -DSDL_X11=OFF -DSDL_WAYLAND=OFF -DSDL_UNIX_CONSOLE_BUILD=ON \
+            -DSDL_TEST_LIBRARY=OFF -DSDL_TESTS=OFF
+          cmake --build sdl-build --parallel 2
+          cmake --install sdl-build
+      - name: Test optional package
+        working-directory: backends/sdl3
+        run: |
+          export PKG_CONFIG_PATH="$RUNNER_TEMP/sdl3/lib/pkgconfig"
+          export LD_LIBRARY_PATH="$RUNNER_TEMP/sdl3/lib"
+          export SDL_VIDEODRIVER=dummy
+          fpm test --c-flag "$(pkg-config --cflags sdl3)" \
+            --link-flag "$(pkg-config --libs-only-L sdl3)"
+          cd integration
+          fpm run --c-flag "$(pkg-config --cflags sdl3)" \
+            --link-flag "$(pkg-config --libs-only-L sdl3)"
+
   # The pictures of the flang build against matplotlib's. The first step makes
   # the references and the pictures; the comparisons after it reuse both.
   # This one stays on pixi, which is where matplotlib and the rasterizers are.

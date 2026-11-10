@@ -1,5 +1,9 @@
 # SDL3 interactive-viewer experiment
 
+This is the historical static-snapshot experiment. For the opt-in fpm
+backend and its application-driven event loop, see
+[backends/sdl3](../../backends/sdl3/README.md).
+
 This is an opt-in, standalone fpm package. It does not change fplotlib's
 dependency-free build or its existing `show()` behavior. `show_sdl3(status)`
 renders the current figure with the existing software rasterizer and opens an

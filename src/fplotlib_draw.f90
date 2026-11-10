@@ -4603,6 +4603,26 @@ contains
         png = r%bytes()
     end function render_png
 
+    ! Opaque, top-to-bottom RGB24 pixels, with channels interleaved by pixel.
+    ! Transparent pixels are composited onto white, as for animation frames.
+    subroutine render_rgb(pixels, width, height)
+        use iso_c_binding, only: c_char
+        character(kind=c_char), allocatable, intent(out) :: pixels(:)
+        integer, intent(out) :: width, height
+        type(png_renderer_t) :: r
+        integer :: i
+
+        r%keep_pixels = .true.
+        call r%set_dpi(fig_dpi)
+        call render_figure(r)
+        width = r%pw
+        height = r%ph
+        allocate (pixels(len(r%rgb)))
+        do i = 1, size(pixels)
+            pixels(i) = achar(iachar(r%rgb(i:i)), kind=c_char)
+        end do
+    end subroutine render_rgb
+
     pure function lower(s) result(t)
         character(len=*), intent(in) :: s
         character(len=len(s)) :: t

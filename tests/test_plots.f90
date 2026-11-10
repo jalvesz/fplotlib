@@ -1560,11 +1560,41 @@ program test_plots
 
     print *, "All test plots written."
 
+    call check_rgb()
+
     ! Every PNG and GIF frame against its stored fingerprint; see
     ! test_fingerprint.f90. Stops with a failure if any picture changed.
     call fp_finish("tests/fingerprints.txt")
 
 contains
+
+    subroutine check_rgb()
+        use iso_c_binding, only: c_char
+        use test_image_io, only: read_png_rgb
+        character(kind=c_char), allocatable :: pixels(:)
+        integer, allocatable :: image(:, :, :)
+        integer :: w, h, x, y, c, k, unit
+
+        call figure(figsize=[2.0_dp, 1.0_dp], dpi=50.0_dp)
+        call plot([0.0_dp, 1.0_dp], [1.0_dp, 0.0_dp], "r-")
+        call title("RGB test")
+        call render_rgb(pixels, w, h)
+        if (w /= 100 .or. h /= 50 .or. size(pixels) /= 3*w*h) error stop "RGB dimensions"
+        call savefig("tests/out/rgb-test.png")
+        call read_png_rgb("tests/out/rgb-test.png", image)
+        if (size(image, 2) /= w .or. size(image, 3) /= h) error stop "PNG dimensions"
+        k = 0
+        do y = 1, h
+            do x = 1, w
+                do c = 1, 3
+                    k = k + 1
+                    if (iachar(pixels(k)) /= image(c, x, y)) error stop "RGB differs from PNG"
+                end do
+            end do
+        end do
+        open (newunit=unit, file="tests/out/rgb-test.png", status="old")
+        close (unit, status="delete")
+    end subroutine check_rgb
 
     ! A repeatable stand-in for random numbers: the fractional part of a
     ! large sine, summed twice so the result piles up in the middle.
