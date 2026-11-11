@@ -90,7 +90,7 @@ jobs:
       # the same toolchain the tests use has to be here too.
       - name: Set up GFortran
         id: fortran
-        uses: fortran-lang/setup-fortran@v2.0.0-beta.11
+        uses: fortran-lang/setup-fortran@v2.0.0-beta.15
         with:
           compiler: gfortran
           version: latest
