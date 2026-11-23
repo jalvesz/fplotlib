@@ -253,11 +253,63 @@ fpm build --compiler flang
 fpm build --compiler lfortran
 ```
 
-The pixi tasks below are for developing fplotlib itself, with pinned compilers.
+## Errors
+
+A call that breaks a documented precondition is a bug in the calling
+program, and it stops with a message naming the call and the rule, and
+exit code 1: `plot(alpha=1.5)`, `savefig` of an unknown format, `xlim`
+with an infinite limit, or, below the plotting API, drawing on a canvas
+that is not open or passing a nonfinite coordinate to a renderer. The
+plotting procedures check their arguments as they come in: an alpha must
+be in [0, 1], and a line width, marker size or font size must be finite
+and not negative (matplotlib quietly accepts some negative sizes; here
+they are taken for the mistakes they are). `tools/gen_arg_checks.py`
+writes these checks from one table of every argument. The few upper
+bounds there are, such as at most 10000 axes in a grid, are listed in the
+`fplotlib_status` documentation.
+
+Missing data is not such a bug: as in matplotlib, a NaN or an infinity in
+plotted data is left out of the picture, and a line breaks around it. Data
+far outside the view, such as a fill value of 1e30 under a `ylim`, is
+clipped and drawn where it crosses the view.
+
+A failure that a correct program can still meet at run time is returned
+instead, through a `status_t` from `fplotlib_status`. Today that is an
+output file that cannot be written, or a PNG cropped with
+`bbox_inches="tight"` to more pixels than it can hold. `savefig`,
+`save_animation` and the `render_*` functions return it in their optional
+`status`, and without one stop with the message and exit code 2:
+
+```fortran
+use fplotlib
+type(status_t) :: st
+call savefig("results/plot.png", status=st)
+if (.not. st%ok()) print *, trim(st%message)
+```
+
+## Frames and pages
+
+`fplotlib_render:renderer_t` is a drawing target, not a file writer; only
+`encoded_renderer_t`, which the SVG, PNG, PDF and EPS backends extend, adds
+`bytes`. A `recording_renderer_t` from `fplotlib_scene` records the drawing
+into an owned `frame_t` instead, with no file or format.
+`fplotlib_draw:render_frame(frame)` captures the current plot that
+way, and `fplotlib_mathtext:math_frame` a formula. A frame's
+`import_frame(child, handle)` imports an owned copy;
+`place(handle, matrix, clip)` can reuse it at several positions. The
+six matrix entries are `[a,b,c,d,e,f]`, mapping a point to
+`(a*x+c*y+e, b*x+d*y+f)`, and the optional rectangular clip is in the child's
+local coordinates. A `paged_document_t` holds pages of frames, which may have
+different sizes; `fplotlib_document` exports it to bytes in memory
+(`export_document`) or to files (`save_document`), one PDF or an SVG, PNG or
+EPS per page. Glyph runs keep their logical UTF-8 text and the source byte
+range of every glyph; PDF text carries a run's text as `ActualText`, and a
+formula keeps its TeX source, which is not used as `ActualText`.
 
 ## Build
 
-Requires [pixi](https://pixi.sh). Every compiler has its own environment with
+The pixi tasks below are for developing fplotlib itself, with pinned compilers.
+They require [pixi](https://pixi.sh). Every compiler has its own environment with
 nothing in it but the compiler and fpm: gfortran and LFortran come from
 conda-forge on Linux and macOS, flang on Linux (on macOS provide a system
 flang on `PATH`). A task installs its environment the first time it runs.
@@ -346,6 +398,10 @@ src/           library modules
                fplotlib_artist.f90  drawing primitives (strokes, fills, markers)
                fplotlib_draw.f90    layout, axes decoration, one renderer per plot type
                fplotlib.f90         the plotting API
+               fplotlib_render.f90  the renderer contract the backends implement
+               fplotlib_status.f90  contract_error, and the status_t of calls that can fail
+               fplotlib_io.f90      writing a file, with the failure returned
+               fplotlib_scene.f90   owned frames, pages and a recording renderer
 examples/      demo.f90
 tests/         Fortran test plots, fingerprints, matplotlib refs, compare scripts
 ```

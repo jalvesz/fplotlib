@@ -2,8 +2,17 @@ program test_plots
     use fplotlib
     use test_fingerprint, only: fp_check_png, fp_check_apng, fp_check_gif, fp_finish
     use test_mathref, only: math_ref_check, delim_ref_check, face_check
+    use test_missing, only: missing_data_check
+    use test_contract, only: contract_case, contract_check
+    use test_glyph_runs, only: glyph_runs_check
+    use test_frame_backends, only: frame_backend_check
+    use test_frames, only: frames_check
     implicit none
-    integer :: fig1, nmath, ndelim, nface
+    integer :: fig1, nmath, ndelim, nface, nmissing, ncontract
+    integer :: nglyph
+    integer :: nbackend
+    integer :: nframe
+    character(len=16) :: carg
     type(axes), allocatable :: axs(:, :)
     type(axes) :: a1, a2, a3
     real(dp) :: td(366), yd(366)
@@ -85,6 +94,18 @@ program test_plots
     real(dp) :: stx(nst), sty(3, nst)
     character(len=4), parameter :: stlab(3) = ["low ", "mid ", "high"]
     real(dp), parameter :: pi = 3.14159265358979323846_dp
+
+    ! "test_plots contract k" makes broken call k and is expected to stop;
+    ! see test_contract.f90.
+    if (command_argument_count() == 2) then
+        call get_command_argument(1, carg)
+        if (carg == "contract") then
+            call get_command_argument(2, carg)
+            read (carg, *) k
+            call contract_case(k)
+            error stop "test_plots: the broken call returned"
+        end if
+    end if
 
     ! Everything is written under tests/out, relative to the project root,
     ! which is where fpm test and the pixi tasks run this program from.
@@ -1573,6 +1594,16 @@ program test_plots
     ! The automatic delimiters against Typst's.
     call delim_ref_check("tests/delim_refs.txt", ndelim)
     call face_check(nface)
+    ! NaN and infinite values in every plot type; see test_missing.f90.
+    call missing_data_check(nmissing)
+    ! Broken preconditions stop with the rule they broke.
+    call contract_check(ncontract)
+    ! Glyph runs and their source; see test_glyph_runs.f90.
+    call glyph_runs_check(nglyph)
+    ! Frames in each backend; see test_frame_backends.f90.
+    call frame_backend_check(nbackend)
+    ! Owned frames and pages; see test_frames.f90.
+    call frames_check(nframe)
 
     ! Every PNG and GIF frame against its stored fingerprint; see
     ! test_fingerprint.f90. Stops with a failure if any picture changed.
@@ -1580,6 +1611,11 @@ program test_plots
     if (nmath > 0) error stop "math layout differs from XeTeX"
     if (ndelim > 0) error stop "automatic delimiters differ from Typst"
     if (nface > 0) error stop "text around math lost its face"
+    if (nmissing > 0) error stop "missing data reached the output"
+    if (ncontract > 0) error stop "a broken precondition did not stop as expected"
+    if (nglyph > 0) error stop "glyph runs failed"
+    if (nbackend > 0) error stop "frame backends failed"
+    if (nframe > 0) error stop "owned frames failed"
 
 contains
 

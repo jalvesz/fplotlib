@@ -15,6 +15,9 @@ module fplotlib_draw
     use fplotlib_ticks
     use fplotlib_svg
     use fplotlib_render
+    use fplotlib_status, only: contract_error, status_t, set_status, ERROR_SIZE
+    use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
+    use, intrinsic :: iso_fortran_env, only: error_unit
     use fplotlib_backend_svg
     use fplotlib_backend_pdf
     use fplotlib_backend_eps
@@ -25,6 +28,7 @@ module fplotlib_draw
     use fplotlib_dates
     use fplotlib_state
     use fplotlib_artist
+    use fplotlib_scene, only: frame_t, recording_renderer_t
     implicit none
     public
 
@@ -103,6 +107,10 @@ contains
         integer :: i, r, c
         real(dp) :: w, h, dx, dy
 
+        ! The product of two counts can overflow an integer; ten thousand
+        ! axes is past any figure anyone looks at.
+        if (real(m, dp)*real(n, dp) > 1.0e4_dp) &
+            call contract_error("axes: a grid of more than 10000 axes")
         cur_i = 0
         if (allocated(ax)) deallocate (ax)
 
@@ -250,7 +258,11 @@ contains
         p = 1.08_dp * TICK_FONT
         ! constrained_layout pads by a flat 1/24 inch instead.
         if (fig_constrained) p = PT_PER_IN / 24.0_dp
-        if (present(pad)) p = pad * TICK_FONT
+        if (present(pad)) then
+            if (.not. ieee_is_finite(pad) .or. pad < 0.0_dp) &
+                call contract_error("tight_layout: pad must be finite and nonnegative")
+            p = pad * TICK_FONT
+        end if
         W = fig_w_in * PT_PER_IN
         H = fig_h_in * PT_PER_IN
         need_l = 0.0_dp
@@ -276,6 +288,15 @@ contains
         end do
         if (len_trim(fig_suptitle) > 0) need_t = need_t + LABEL_BOX * fig_suptitle_size
 
+        ! A figure too small for its decorations keeps the layout it had,
+        ! with the warning matplotlib gives, rather than axes of negative
+        ! size.
+        if ((p + need_l) / W >= 1.0_dp - (p + need_r) / W .or. &
+            (p + need_b) / H >= 1.0_dp - (p + need_t) / H) then
+            write (error_unit, "(a)") "fplotlib: tight_layout not applied: " &
+                //"the decorations leave no room for the axes"
+            return
+        end if
         fig_left = (p + need_l) / W
         fig_right = 1.0_dp - (p + need_r) / W
         fig_bottom = (p + need_b) / H
@@ -899,6 +920,7 @@ contains
         if (a%xlim_set) then
             xmin = a%xmin_user
             xmax = a%xmax_user
+            call nonsingular_limits(xmin, xmax, a%xsc)
         else
             ! An axes with nothing to autoscale to keeps the plain unit
             ! square matplotlib gives it, margins and all.
@@ -913,6 +935,7 @@ contains
         if (a%ylim_set) then
             ymin = a%ymin_user
             ymax = a%ymax_user
+            call nonsingular_limits(ymin, ymax, a%ysc)
         else
             if (anyy) then
                 call expand_limits(ymin, ymax, a%ysc, a%ymargin, sticky_lo, sticky_hi)
@@ -1016,6 +1039,14 @@ contains
         real(dp) :: c, h
         c = 0.5_dp * (lo + hi)
         h = 0.5_dp * (hi - lo) * f
+        if (.not. ieee_is_finite(c) .or. .not. ieee_is_finite(h)) then
+            ! Limits near the largest double, which they stop at.
+            c = 0.5_dp*lo + 0.5_dp*hi
+            h = (0.5_dp*hi - 0.5_dp*lo) * f
+            lo = max(-huge(1.0_dp), c - h)
+            hi = min(huge(1.0_dp), c + h)
+            return
+        end if
         lo = c - h
         hi = c + h
     end subroutine grow_about_centre
@@ -1028,6 +1059,85 @@ contains
         v = t
     end subroutine swap
 
+    ! Limits set by hand that are too close together to draw between, as
+    ! matplotlib's locators widen them by their nonsingular: on a linear
+    ! axis, limits near zero become -0.05 to 0.05 and equal ones grow by 5%
+    ! of their size; on a log axis, equal ones grow a decade each way; on a
+    ! symlog axis, ones it cannot tell apart grow by 5% of their size, as
+    ! autoscaling widens them. The result stops at the ends of the scale;
+    ! descending limits stay so.
+    pure subroutine nonsingular_limits(lo, hi, sc)
+        real(dp), intent(inout) :: lo, hi
+        type(scale_t), intent(in) :: sc
+        real(dp) :: a, b, big
+        logical :: flip
+
+        flip = lo > hi
+        a = min(lo, hi)
+        b = max(lo, hi)
+        if (sc%kind == SCALE_SYMLOG) then
+            if (unresolved(a, b, sc)) call widen_apart(a, b, .false., .false.)
+        else if (sc%kind == SCALE_LOG) then
+            if (a > 0.0_dp .and. b <= a*(1.0_dp + 1.0e-12_dp)) then
+                a = max(tiny(1.0_dp), 0.1_dp*a)
+                ! A decade above both ends, which keeps it above the low one
+                ! where that was raised to the least normal double.
+                b = min(huge(1.0_dp), max(10.0_dp*b, 10.0_dp*a))
+            end if
+        else
+            big = max(abs(a), abs(b))
+            if (big < 1.0e6_dp*tiny(1.0_dp)) then
+                a = -0.05_dp
+                b = 0.05_dp
+            else if (b - a <= 1.0e-15_dp*big) then
+                a = max(-huge(1.0_dp), a - 0.05_dp*abs(a))
+                b = min(huge(1.0_dp), b + 0.05_dp*abs(b))
+            end if
+        end if
+        if (flip) then
+            lo = b
+            hi = a
+        else
+            lo = a
+            hi = b
+        end if
+    end subroutine nonsingular_limits
+
+    ! Whether a symlog axis cannot tell lo and hi apart: their places on it
+    ! are within eight roundings of each other, measured relative to the
+    ! places themselves. (Relative through epsilon, not spacing(), which
+    ! for a value below about 2e-292 is tiny itself and far too wide, and
+    ! differs between compilers there.)
+    pure logical function unresolved(lo, hi, sc)
+        real(dp), intent(in) :: lo, hi
+        type(scale_t), intent(in) :: sc
+        real(dp) :: u0, u1
+        u0 = scale_fwd(sc, lo)
+        u1 = scale_fwd(sc, hi)
+        ! Where the places are subnormal, a rounding is the least subnormal,
+        ! epsilon*tiny, which eight epsilons of them fall short of.
+        unresolved = abs(u1 - u0) <= 8.0_dp*max(epsilon(1.0_dp)*max(abs(u0), abs(u1)), &
+                                                epsilon(1.0_dp)*tiny(1.0_dp))
+    end function unresolved
+
+    ! Moves lo and hi apart by 5% of their size each way, or to -0.05 and
+    ! 0.05 near zero, as matplotlib's nonsingular does with limits it cannot
+    ! tell apart; a sticky end stays where it is, and the ends stop at the
+    ! largest double.
+    pure subroutine widen_apart(lo, hi, sticky_lo, sticky_hi)
+        real(dp), intent(inout) :: lo, hi
+        logical, intent(in) :: sticky_lo, sticky_hi
+        real(dp) :: big
+        big = max(abs(lo), abs(hi))
+        if (big < 1.0e6_dp*tiny(1.0_dp)) then
+            if (.not. sticky_lo) lo = -0.05_dp
+            if (.not. sticky_hi) hi = 0.05_dp
+        else
+            if (.not. sticky_lo) lo = max(-huge(1.0_dp), lo - 0.05_dp*big)
+            if (.not. sticky_hi) hi = min(huge(1.0_dp), hi + 0.05_dp*big)
+        end if
+    end subroutine widen_apart
+
     ! Pad a data range by the axis margin. A sticky edge (the bar
     ! baseline) is left exactly where it is.
     subroutine expand_limits(lo, hi, sc, margin, sticky_lo, sticky_hi)
@@ -1035,11 +1145,30 @@ contains
         type(scale_t), intent(in) :: sc
         real(dp), intent(in) :: margin
         logical, intent(in) :: sticky_lo, sticky_hi
-        real(dp) :: u0, u1, d
+        real(dp) :: u0, u1, d, thr
 
         if (sc%kind == SCALE_LOG) then
-            if (lo <= 0.0_dp) lo = tiny(1.0_dp)
-            if (hi <= lo) hi = lo * 10.0_dp
+            if (lo < tiny(1.0_dp)) lo = tiny(1.0_dp)
+            if (hi <= lo) then
+                ! A decade up, or, near the largest double, a decade down.
+                if (lo > 0.1_dp*huge(1.0_dp)) then
+                    hi = lo
+                    lo = 0.1_dp*lo
+                else
+                    hi = lo * 10.0_dp
+                end if
+            end if
+        end if
+
+        ! A symlog axis widens data it cannot tell apart in data space,
+        ! before any margin and with none, as matplotlib's locators do: its
+        ! own units shrink with linthresh, so no fixed amount of them will do.
+        if (sc%kind == SCALE_SYMLOG) then
+            if (unresolved(lo, hi, sc)) then
+                call widen_apart(lo, hi, sticky_lo, sticky_hi)
+                ! Past what even that can part, the limits are as widened.
+                if (unresolved(lo, hi, sc)) return
+            end if
         end if
 
         if (margin <= 0.0_dp) return
@@ -1049,9 +1178,29 @@ contains
         u0 = scale_fwd(sc, lo)
         u1 = scale_fwd(sc, hi)
         d = u1 - u0
-        if (abs(d) < 1.0e-30_dp) d = 1.0_dp
+        if (.not. ieee_is_finite(d) .and. ieee_is_finite(u0) .and. ieee_is_finite(u1)) then
+            ! A range of finite ends wider than the largest double: the
+            ! margin is worked out from half of it, and the limits stop at
+            ! the largest double.
+            d = 0.5_dp*u1 - 0.5_dp*u0
+            if (.not. sticky_lo) lo = scale_inv(sc, max(-huge(1.0_dp), u0 - 2.0_dp*margin*d))
+            if (.not. sticky_hi) hi = scale_inv(sc, min(huge(1.0_dp), u1 + 2.0_dp*margin*d))
+            return
+        end if
+        ! (A symlog span was parted above.)
+        if (sc%kind /= SCALE_SYMLOG) then
+            thr = 1.0e-30_dp
+            if (abs(d) < thr) d = 1.0_dp
+        end if
         if (.not. sticky_lo) lo = scale_inv(sc, u0 - margin * d)
         if (.not. sticky_hi) hi = scale_inv(sc, u1 + margin * d)
+        ! A margin past the largest double, as on a log axis of data up to
+        ! 1e300, stops at it; on a log axis the low end stays positive.
+        if (.not. ieee_is_finite(hi) .and. ieee_is_finite(u1)) hi = huge(1.0_dp)
+        if (.not. ieee_is_finite(lo) .and. ieee_is_finite(u0)) lo = -huge(1.0_dp)
+        ! A log margin below the least normal double stops at it, where the
+        ! scale ends.
+        if (sc%kind == SCALE_LOG .and. lo < tiny(1.0_dp)) lo = tiny(1.0_dp)
     end subroutine expand_limits
 
     pure function map_x(x, xmin, xmax, ax_l, ax_w, sc) result(px)
@@ -1068,6 +1217,18 @@ contains
         py = ax_b - axis_frac(y, ymin, ymax, sc) * ax_h
     end function map_y
 
+    ! Where v sits from lo to hi, as a fraction of the way, from half values
+    ! where hi - lo is past the largest double.
+    pure elemental function lin_frac(v, lo, hi) result(t)
+        real(dp), intent(in) :: v, lo, hi
+        real(dp) :: t
+        if (ieee_is_finite(hi - lo)) then
+            t = (v - lo)/(hi - lo)
+        else
+            t = (0.5_dp*v - 0.5_dp*lo)/(0.5_dp*hi - 0.5_dp*lo)
+        end if
+    end function lin_frac
+
     ! Where v sits along the axis, as a fraction from the low end. Every
     ! scale is linear once the values have gone through its transform.
     pure function axis_frac(v, vmin, vmax, sc) result(t)
@@ -1078,6 +1239,10 @@ contains
         u1 = scale_fwd(sc, vmax)
         if (u1 == u0) then
             t = 0.5_dp
+        else if (.not. ieee_is_finite(u1 - u0) .and. ieee_is_finite(u0) .and. ieee_is_finite(u1)) then
+            ! Limits further apart than the largest double: the same
+            ! fraction, from half of each value.
+            t = (0.5_dp*scale_fwd(sc, v) - 0.5_dp*u0) / (0.5_dp*u1 - 0.5_dp*u0)
         else
             t = (scale_fwd(sc, v) - u0) / (u1 - u0)
         end if
@@ -1245,11 +1410,11 @@ contains
             end do
             if (s%patch_fill) then
                 p = brush(trim(s%color), s%alpha)
-                call b%draw_path(px(1:s%n), py(1:s%n), s%pverb, size(s%pverb), p)
+                call put_path(b, px(1:s%n), py(1:s%n), s%pverb, size(s%pverb), p)
             end if
             if (len_trim(s%edgecolor) > 0) then
                 p = pen(trim(s%edgecolor), s%edgewidth, s%alpha)
-                call b%draw_path(px(1:s%n), py(1:s%n), s%pverb, size(s%pverb), p)
+                call put_path(b, px(1:s%n), py(1:s%n), s%pverb, size(s%pverb), p)
             end if
             return
         end if
@@ -1822,6 +1987,9 @@ contains
         ! decade falls inside the view, which a short axis need not.
         if (sc%kind == SCALE_LOG) then
             if (vmin <= 0.0_dp .or. vmax <= vmin) return
+            if (.not. ieee_is_finite(vmax)) return
+            ! Where the majors skip decades, matplotlib draws no minors.
+            if (log_stride(vmin, vmax) > 1) return
             do i = floor(log10(vmin)), floor(log10(vmax))
                 do k = 2, 9
                     call push_minor(m, nm, real(k, dp)*10.0_dp**i, vmin, vmax)
@@ -2492,7 +2660,7 @@ contains
         end do
 
         p%clip = g_clip
-        call b%draw_image(min(px0, px1), min(py0, py1), abs(px1 - px0), &
+        call put_image(b, min(px0, px1), min(py0, py1), abs(px1 - px0), &
                           abs(py1 - py0), rgba, nc*fx, nr*fy, p)
     end subroutine append_image
 
@@ -2542,7 +2710,7 @@ contains
         end do
 
         p%clip = g_clip
-        call b%draw_image(min(px0, px1), min(py0, py1), abs(px1 - px0), &
+        call put_image(b, min(px0, px1), min(py0, py1), abs(px1 - px0), &
                           abs(py1 - py0), rgba, ow, oh, p)
     end subroutine append_image_smooth
 
@@ -2554,8 +2722,13 @@ contains
         integer, intent(in) :: n
         integer :: f
         integer, parameter :: MAX_SAMPLES = 2048
+        real(dp) :: x
 
-        f = max(1, ceiling(extent/real(max(n, 1), dp)))
+        ! Bounded before ceiling, which an extent past any integer, or a
+        ! missing one, would overflow.
+        x = extent/real(max(n, 1), dp)
+        f = 1
+        if (x > 1.0_dp) f = ceiling(min(x, real(MAX_SAMPLES, dp)))
         f = min(f, max(1, MAX_SAMPLES/max(n, 1)))
     end function fill_factor
 
@@ -2681,6 +2854,8 @@ contains
         character(len=512) :: esc
 
         call cbar_box(a, W, H, bx, bt, bw, bh)
+        ! A bar the layout left no room for is not drawn.
+        if (.not. (bw > 0.0_dp .and. bh > 0.0_dp)) return
         bb = bt + bh
 
         ! Slices are grown slightly so they abut without seams, so keep them
@@ -2691,8 +2866,8 @@ contains
             lo = a%img_bounds(1)
             hi = a%img_bounds(size(a%img_bounds))
             do i = 1, size(a%img_bounds) - 1
-                y0 = (a%img_bounds(i) - lo) / (hi - lo)
-                y1 = (a%img_bounds(i + 1) - lo) / (hi - lo)
+                y0 = lin_frac(a%img_bounds(i), lo, hi)
+                y1 = lin_frac(a%img_bounds(i + 1), lo, hi)
                 v = 0.5_dp * (a%img_bounds(i) + a%img_bounds(i + 1))
                 call cbar_band(b, a%cbar_horiz, bx, bt, bw, bh, y0, y1, &
                                img_color(a, v))
@@ -2708,7 +2883,7 @@ contains
         end if
         call clear_clip()
 
-        call b%draw_rect(bx, bt, bw, bh, pen(rc_spine_color, rc_spine_lw))
+        call put_rect(b, bx, bt, bw, bh, pen(rc_spine_color, rc_spine_lw))
 
         lo = a%img_vmin
         hi = a%img_vmax
@@ -2731,7 +2906,7 @@ contains
         do i = 1, nt
             v = cb_ticks(i)
             if (v < lo .or. v > hi) cycle
-            t = (v - lo)/(hi - lo)
+            t = lin_frac(v, lo, hi)
             ! Bands place their ticks at the edges they stand for; every
             ! other norm puts a tick where the norm puts the value.
             if (.not. allocated(a%img_bounds)) t = cmap_t(a, v)
@@ -2866,7 +3041,12 @@ contains
         if (abs(v) <= lt) then
             u = v*adj
         else
-            u = sign(lt*(adj + log10(abs(v)/lt)), v)
+            if (ieee_is_finite(abs(v)/lt)) then
+                u = sign(lt*(adj + log10(abs(v)/lt)), v)
+            else
+                ! v so far past linthresh that the ratio overflows.
+                u = sign(lt*(adj + log10(abs(v)) - log10(lt)), v)
+            end if
         end if
     end function symlog_fwd
 
@@ -2911,14 +3091,14 @@ contains
             if (v < a%img_vcenter) then
                 t = 0.0_dp
                 if (a%img_vcenter > lo) &
-                    t = 0.5_dp*(v - lo)/(a%img_vcenter - lo)
+                    t = 0.5_dp*lin_frac(v, lo, a%img_vcenter)
             else
                 t = 1.0_dp
                 if (hi > a%img_vcenter) &
-                    t = 0.5_dp + 0.5_dp*(v - a%img_vcenter)/(hi - a%img_vcenter)
+                    t = 0.5_dp + 0.5_dp*lin_frac(v, a%img_vcenter, hi)
             end if
         case (NORM_POWER)
-            t = (v - lo)/(hi - lo)
+            t = lin_frac(v, lo, hi)
             t = max(0.0_dp, min(1.0_dp, t))**a%img_gamma
         case (NORM_SYMLOG)
             t = symlog_fwd(hi, a%img_linthresh) - symlog_fwd(lo, a%img_linthresh)
@@ -2929,7 +3109,7 @@ contains
                      - symlog_fwd(lo, a%img_linthresh))/t
             end if
         case default
-            t = (v - lo)/(hi - lo)
+            t = lin_frac(v, lo, hi)
         end select
     end function cmap_t
 
@@ -3292,6 +3472,9 @@ contains
         type(axes_t), intent(in) :: a
         real(dp), intent(out) :: lims(6)
         real(dp), parameter :: MARG(3) = [0.05_dp, 0.05_dp, 0.0_dp]
+        ! A 3D axes is linear on every axis: a scale_t is linear unless
+        ! set otherwise.
+        type(scale_t) :: lin
         real(dp) :: lo(3), hi(3), c, d
         logical :: have
         integer :: i, k
@@ -3301,34 +3484,30 @@ contains
         have = .false.
         do i = 1, a%n_series
             select case (a%series(i)%kind)
+            ! Missing values have no extent, as they have in 2D.
             case (SERIES_LINE3D, SERIES_SCATTER3D, SERIES_TRISURF)
                 if (a%series(i)%nolim) cycle
-                do k = 1, a%series(i)%n
-                    lo(1) = min(lo(1), a%series(i)%x(k))
-                    hi(1) = max(hi(1), a%series(i)%x(k))
-                    lo(2) = min(lo(2), a%series(i)%y(k))
-                    hi(2) = max(hi(2), a%series(i)%y(k))
-                    lo(3) = min(lo(3), a%series(i)%z(k))
-                    hi(3) = max(hi(3), a%series(i)%z(k))
-                end do
-                have = .true.
+                k = a%series(i)%n
+                call fold_finite(lo(1), hi(1), a%series(i)%x(1:k), a%series(i)%x(1:k), have)
+                call fold_finite(lo(2), hi(2), a%series(i)%y(1:k), a%series(i)%y(1:k), have)
+                call fold_finite(lo(3), hi(3), a%series(i)%z(1:k), a%series(i)%z(1:k), have)
             case (SERIES_BAR3D)
-                lo(1) = min(lo(1), minval(a%series(i)%x))
-                hi(1) = max(hi(1), maxval(a%series(i)%x) + a%series(i)%d3x)
-                lo(2) = min(lo(2), minval(a%series(i)%y))
-                hi(2) = max(hi(2), maxval(a%series(i)%y) + a%series(i)%d3y)
-                lo(3) = min(lo(3), minval(a%series(i)%z))
-                hi(3) = max(hi(3), maxval(a%series(i)%z2))
-                have = .true.
+                call fold_finite(lo(1), hi(1), a%series(i)%x, a%series(i)%x + a%series(i)%d3x, have)
+                call fold_finite(lo(2), hi(2), a%series(i)%y, a%series(i)%y + a%series(i)%d3y, have)
+                call fold_finite(lo(3), hi(3), a%series(i)%z, a%series(i)%z2, have)
             case (SERIES_SURFACE)
-                lo(1) = min(lo(1), minval(a%series(i)%x))
-                hi(1) = max(hi(1), maxval(a%series(i)%x))
-                lo(2) = min(lo(2), minval(a%series(i)%y))
-                hi(2) = max(hi(2), maxval(a%series(i)%y))
-                lo(3) = min(lo(3), minval(a%series(i)%zg))
-                hi(3) = max(hi(3), maxval(a%series(i)%zg))
-                have = .true.
+                call fold_finite(lo(1), hi(1), a%series(i)%x, a%series(i)%x, have)
+                call fold_finite(lo(2), hi(2), a%series(i)%y, a%series(i)%y, have)
+                call fold_finite(lo(3), hi(3), reshape(a%series(i)%zg, [size(a%series(i)%zg)]), &
+                                 reshape(a%series(i)%zg, [size(a%series(i)%zg)]), have)
             end select
+        end do
+        ! An axis whose every value is missing gets the unit range.
+        do i = 1, 3
+            if (lo(i) > hi(i)) then
+                lo(i) = 0.0_dp
+                hi(i) = 1.0_dp
+            end if
         end do
         if (.not. have) then
             lo = 0.0_dp
@@ -3358,11 +3537,32 @@ contains
             lims(2*i) = hi(i)
         end do
 
-        ! Limits set by hand get none of that: they are taken as given.
+        ! Limits set by hand get none of that: they are taken as given,
+        ! unless too close together to draw between.
         if (a%xlim_set) lims(1:2) = [a%xmin_user, a%xmax_user]
         if (a%ylim_set) lims(3:4) = [a%ymin_user, a%ymax_user]
         if (a%zlim_set) lims(5:6) = [a%zmin_user, a%zmax_user]
+        do i = 1, 3
+            call nonsingular_limits(lims(2*i - 1), lims(2*i), lin)
+        end do
     end subroutine limits3d
+
+    ! Widens [lo, hi] to take in the finite values of low and high, the
+    ! lower and upper ends of what one series spans; have records that
+    ! there was something to take in.
+    pure subroutine fold_finite(lo, hi, low, high, have)
+        real(dp), intent(inout) :: lo, hi
+        real(dp), intent(in) :: low(:), high(:)
+        logical, intent(inout) :: have
+        integer :: k
+        do k = 1, size(low)
+            if (ieee_is_finite(low(k))) lo = min(lo, low(k))
+        end do
+        do k = 1, size(high)
+            if (ieee_is_finite(high(k))) hi = max(hi, high(k))
+        end do
+        have = .true.
+    end subroutine fold_finite
 
     ! A data point to device points, with the projected depth alongside.
     subroutine dev3(M, bl, bt, side, x, y, z, ux, uy, uz)
@@ -3599,6 +3799,7 @@ contains
         real(dp), intent(in) :: M(4, 4), bl, bt, side
         real(dp), allocatable :: px(:), py(:), pd(:)
         integer, allocatable :: idx(:)
+        logical, allocatable :: ok(:)
         real(dp) :: sat, lo, span, one(1), oney(1)
         integer :: i, k, n
         type(paint_t) :: p
@@ -3615,7 +3816,7 @@ contains
                 if (a%series(i)%linestyle /= LINE_NONE) then
                     p = pen(a%series(i)%color, a%series(i)%linewidth, &
                             a%series(i)%alpha, a%series(i)%linestyle)
-                    call b%draw_path(px, py, line_verbs(n), n, p)
+                    call put_path(b, px, py, line_verbs(n), n, p)
                 end if
                 call append_markers(b, a%series(i)%marker, px, py, n, &
                                     a%series(i)%markersize, a%series(i)%color, &
@@ -3629,11 +3830,20 @@ contains
                 end do
                 call order_far_first(pd, n, idx)
                 ! Depth shading: the further a point is, the more it fades
-                ! into the background, down to three tenths opacity.
-                lo = minval(pd)
-                span = sqrt((maxval(px) - minval(px))**2 + (maxval(py) - minval(py))**2 &
-                            + (maxval(pd) - lo)**2)
+                ! into the background, down to three tenths opacity. A point
+                ! with a missing coordinate is not drawn and does not count.
+                allocate (ok(n))
+                ok = ieee_is_finite(px) .and. ieee_is_finite(py) .and. ieee_is_finite(pd)
+                if (.not. any(ok)) then
+                    deallocate (px, py, pd, idx, ok)
+                    cycle
+                end if
+                lo = minval(pd, mask=ok)
+                span = sqrt((maxval(px, mask=ok) - minval(px, mask=ok))**2 &
+                            + (maxval(py, mask=ok) - minval(py, mask=ok))**2 &
+                            + (maxval(pd, mask=ok) - lo)**2)
                 do k = 1, n
+                    if (.not. ok(idx(k))) cycle
                     sat = 1.0_dp
                     if (span > 0.0_dp) sat = 1.0_dp - (pd(idx(k)) - lo)/span
                     sat = max(0.3_dp, min(1.0_dp, sat))
@@ -3643,7 +3853,7 @@ contains
                                         a%series(i)%markersize, a%series(i)%color, &
                                         a%series(i)%alpha*sat)
                 end do
-                deallocate (px, py, pd, idx)
+                deallocate (px, py, pd, idx, ok)
             case (SERIES_SURFACE)
                 call render_surface(b, a%series(i), M, bl, bt, side)
             case (SERIES_TRISURF)
@@ -3936,6 +4146,9 @@ contains
         ax_t = (1.0_dp - a%top) * H
         ax_w = ax_r - ax_l
         ax_h = ax_b - ax_t
+        ! An axes the layout left no room for, as matplotlib's would be
+        ! with the same subplot parameters, has nothing to show.
+        if (.not. (ax_w > 0.0_dp .and. ax_h > 0.0_dp)) return
 
         if (a%polar) then
             call render_polar(b, a, ax_l, ax_r, ax_b, ax_t)
@@ -3952,6 +4165,12 @@ contains
         if (a%aspect > 0.0_dp) then
             span_x = abs(xmax - xmin)
             span_y = abs(ymax - ymin)
+            ! Only the ratio of the spans and the box matter, so a span past
+            ! the largest double is taken, with the other, at half.
+            if (.not. ieee_is_finite(span_x) .or. .not. ieee_is_finite(span_y)) then
+                span_x = abs(0.5_dp*xmax - 0.5_dp*xmin)
+                span_y = abs(0.5_dp*ymax - 0.5_dp*ymin)
+            end if
             if (span_x > 0.0_dp .and. span_y > 0.0_dp) then
                 if (a%aspect_datalim) then
                     ! Stretch whichever range is drawn too short, about its
@@ -4218,7 +4437,7 @@ contains
                         k1 = k1 + 1
                     end do
                     if (k1 - k0 >= 2) &
-                        call b%draw_path(lx(k0:k1 - 1), ly(k0:k1 - 1), &
+                        call put_path(b, lx(k0:k1 - 1), ly(k0:k1 - 1), &
                                          line_verbs(k1 - k0), k1 - k0, pnt)
                     k0 = k1
                 end do
@@ -4290,7 +4509,7 @@ contains
         ! them alone renders exactly as it did before they could be hidden.
         if (.not. a%frame_off) then
             if (all(a%spine)) then
-                call b%draw_rect(ax_l, ax_t, ax_w, ax_h, pen(rc_spine_color, rc_spine_lw))
+                call put_rect(b, ax_l, ax_t, ax_w, ax_h, pen(rc_spine_color, rc_spine_lw))
             else
                 if (a%spine(SPINE_LEFT)) call append_spine(b, ax_l, ax_t, ax_l, ax_b)
                 if (a%spine(SPINE_RIGHT)) call append_spine(b, ax_r, ax_t, ax_r, ax_b)
@@ -4475,7 +4694,7 @@ contains
                     pnt%stroked = .true.
                     pnt%stroke_rgb = hex_rgb(rc_legend_edge)
                     pnt%line_width = 0.8_dp
-                    call b%draw_rect(leg_x, leg_y, leg_w, leg_h, pnt, 2.0_dp)
+                    call put_rect(b, leg_x, leg_y, leg_w, leg_h, pnt, 2.0_dp)
                 end if
                 leg_x0 = leg_x
                 k = 0
@@ -4519,49 +4738,49 @@ contains
     ! Draw the whole figure into any backend. Everything above this point is
     ! format independent; the only thing render_svg and its PDF and PNG
     ! counterparts add is the choice of renderer.
-    subroutine render_figure(b, facecolor, transparent, bbox_inches, pad_inches)
+    ! status, when present, is ERROR_SIZE for a PNG cropped to too many
+    ! pixels, and nothing is drawn; it is ok otherwise.
+    subroutine render_figure(b, facecolor, transparent, bbox_inches, pad_inches, status)
         class(renderer_t), intent(inout) :: b
         character(len=*), intent(in), optional :: facecolor, bbox_inches
         logical, intent(in), optional :: transparent
         real(dp), intent(in), optional :: pad_inches
-        real(dp) :: W, H, vx, vy, vw, vh, bpad
+        type(status_t), intent(out), optional :: status
+        real(dp) :: W, H, vx, vy, vw, vh
         character(len=512) :: esc
         character(len=7) :: face
         logical :: clear
         integer :: i, en, n_grp
 
-        call ensure_fig()
-        ! constrained_layout fits the decorations just before the drawing
-        ! goes out, when every label the figure will carry is known.
-        if (fig_constrained) call tight_layout()
+        ! The window first: it settles a constrained layout as well.
+        call figure_window(bbox_inches, pad_inches, vx, vy, vw, vh)
+        W = fig_w_in*PT_PER_IN
+        H = fig_h_in*PT_PER_IN
         clear = .false.
         if (present(transparent)) clear = transparent
         face = resolve_color(facecolor)
         if (len_trim(face) == 0) face = rc_fig_face
         call clear_clip()
 
-        W = fig_w_in*PT_PER_IN
-        H = fig_h_in*PT_PER_IN
-        vx = 0.0_dp
-        vy = 0.0_dp
-        vw = W
-        vh = H
-        if (present(bbox_inches)) then
-            if (lower(trim(bbox_inches)) == "tight") then
-                bpad = 0.1_dp
-                if (present(pad_inches)) bpad = pad_inches
-                bpad = bpad*PT_PER_IN
-                ! Cropping moves the window onto the drawing, so the drawing
-                ! itself needs no translation.
-                call drawn_bbox(W, H, vx, vy, vw, vh)
-                vx = vx - bpad
-                vy = vy - bpad
-                vw = vw - vx + bpad
-                vh = vh - vy + bpad
-            else if (len_trim(bbox_inches) > 0) then
-                error stop "fplotlib: bbox_inches must be 'tight'"
+        ! A PNG has to fit MAX_PNG_PIXELS. Cropped to what is drawn, its size
+        ! depends on the drawing, which the caller cannot know beforehand,
+        ! so a crop too large is returned; the whole figure's size the
+        ! caller can work out, so a figure too large is a broken
+        ! precondition.
+        select type (b)
+        type is (png_renderer_t)
+            if (.not. png_fits(vw, vh, b%dpi)) then
+                if (.not. tight_crop(bbox_inches)) then
+                    call contract_error("render_png: the figure has too many pixels at this dpi")
+                else if (present(status)) then
+                    call set_status(status, ERROR_SIZE, "the cropped figure has too many pixels at this dpi")
+                else
+                    write (error_unit, "(a)") "fplotlib: render_png: the cropped figure has too many pixels at this dpi"
+                    error stop 2
+                end if
+                return
             end if
-        end if
+        end select
 
         ! transparent drops the figure patch entirely
         if (clear) then
@@ -4599,61 +4818,177 @@ contains
         call b%close_canvas()
     end subroutine render_figure
 
-    function render_svg(facecolor, transparent, bbox_inches, pad_inches) result(svg)
+    ! pad_inches, for savefig and the render_* functions, whether the
+    ! figure is cropped or not: finite, and at most a billion inches either
+    ! way, so that the cropped window stays finite.
+    subroutine check_pad_arg(proc, name, v)
+        character(len=*), intent(in) :: proc, name
+        real(dp), intent(in), optional :: v
+        if (.not. present(v)) return
+        if (.not. ieee_is_finite(v) .or. abs(v) > 1.0e9_dp) &
+            call contract_error(proc//": "//name//" must be finite and at most 1e9 inches")
+    end subroutine check_pad_arg
+
+    ! The window of the drawing a figure is written through, in points:
+    ! the whole figure, or with bbox_inches="tight" what is drawn and
+    ! pad_inches about it.
+    subroutine figure_window(bbox_inches, pad_inches, vx, vy, vw, vh)
+        character(len=*), intent(in), optional :: bbox_inches
+        real(dp), intent(in), optional :: pad_inches
+        real(dp), intent(out) :: vx, vy, vw, vh
+        real(dp) :: W, H, bpad, lim
+
+        call ensure_fig()
+        ! constrained_layout fits the decorations just before the drawing
+        ! goes out, when every label the figure will carry is known.
+        if (fig_constrained) call tight_layout()
+        W = fig_w_in*PT_PER_IN
+        H = fig_h_in*PT_PER_IN
+        vx = 0.0_dp
+        vy = 0.0_dp
+        vw = W
+        vh = H
+        if (present(bbox_inches)) then
+            if (lower(trim(bbox_inches)) == "tight") then
+                bpad = 0.1_dp
+                ! Checked by the caller, through check_pad_arg.
+                if (present(pad_inches)) bpad = pad_inches
+                bpad = bpad*PT_PER_IN
+                ! Cropping moves the window onto the drawing, so the drawing
+                ! itself needs no translation.
+                call drawn_bbox(W, H, vx, vy, vw, vh)
+                vx = vx - bpad
+                vy = vy - bpad
+                vw = vw - vx + bpad
+                vh = vh - vy + bpad
+                ! A negative pad, which matplotlib takes, crops into the
+                ! drawing; past its middle there is a point of it left.
+                if (vw < 1.0_dp) then
+                    vx = vx - 0.5_dp*(1.0_dp - vw)
+                    vw = 1.0_dp
+                end if
+                if (vh < 1.0_dp) then
+                    vy = vy - 0.5_dp*(1.0_dp - vh)
+                    vh = 1.0_dp
+                end if
+                ! Decorations placed absurdly far out (a labelpad of 1e20, say)
+                ! may not take the canvas past what a renderer takes: the
+                ! window keeps to a billion inches about the figure.
+                lim = 1.0e9_dp*PT_PER_IN
+                if (vx < -lim) then
+                    vw = vw - (-lim - vx)
+                    vx = -lim
+                end if
+                if (vy < -lim) then
+                    vh = vh - (-lim - vy)
+                    vy = -lim
+                end if
+                vw = max(1.0_dp, min(vw, lim + W - vx))
+                vh = max(1.0_dp, min(vh, lim + H - vy))
+            else if (len_trim(bbox_inches) > 0) then
+                call contract_error("savefig: bbox_inches must be 'tight'")
+            end if
+        end if
+
+    end subroutine figure_window
+
+    logical function tight_crop(bbox_inches)
+        character(len=*), intent(in), optional :: bbox_inches
+        tight_crop = .false.
+        if (present(bbox_inches)) tight_crop = lower(trim(bbox_inches)) == "tight"
+    end function tight_crop
+
+    ! Whether a canvas of vw by vh points has at most MAX_PNG_PIXELS pixels
+    ! at dpi.
+    logical function png_fits(vw, vh, dpi)
+        real(dp), intent(in) :: vw, vh, dpi
+        png_fits = png_pixels(vw, vh, dpi) <= MAX_PNG_PIXELS
+    end function png_fits
+
+    ! The current figure recorded as a frame, which owns what it holds and
+    ! can be placed, transformed and clipped, into other frames and pages.
+    subroutine render_frame(frame, facecolor, transparent, bbox_inches, pad_inches)
+        type(frame_t), intent(out) :: frame
         character(len=*), intent(in), optional :: facecolor, bbox_inches
         logical, intent(in), optional :: transparent
         real(dp), intent(in), optional :: pad_inches
+        type(recording_renderer_t) :: recorder
+        call check_pad_arg("render_frame", "pad_inches", pad_inches)
+        call render_figure(recorder, facecolor, transparent, bbox_inches, pad_inches)
+        call recorder%take(frame)
+    end subroutine render_frame
+
+    function render_svg(facecolor, transparent, bbox_inches, pad_inches, status) result(svg)
+        character(len=*), intent(in), optional :: facecolor, bbox_inches
+        logical, intent(in), optional :: transparent
+        real(dp), intent(in), optional :: pad_inches
+        type(status_t), intent(out), optional :: status
         character(len=:), allocatable :: svg
         type(svg_renderer_t) :: r
-        call render_figure(r, facecolor, transparent, bbox_inches, pad_inches)
+        call check_pad_arg("render_svg", "pad_inches", pad_inches)
+        call render_figure(r, facecolor, transparent, bbox_inches, pad_inches, status)
         svg = r%bytes()
     end function render_svg
 
-    function render_pdf(facecolor, transparent, bbox_inches, pad_inches) result(pdf)
+    function render_pdf(facecolor, transparent, bbox_inches, pad_inches, status) result(pdf)
         character(len=*), intent(in), optional :: facecolor, bbox_inches
         logical, intent(in), optional :: transparent
         real(dp), intent(in), optional :: pad_inches
+        type(status_t), intent(out), optional :: status
         character(len=:), allocatable :: pdf
         type(pdf_renderer_t) :: r
-        call render_figure(r, facecolor, transparent, bbox_inches, pad_inches)
+        call check_pad_arg("render_pdf", "pad_inches", pad_inches)
+        call render_figure(r, facecolor, transparent, bbox_inches, pad_inches, status)
         pdf = r%bytes()
     end function render_pdf
 
-    ! Unlike the vector formats, dpi is not decorative here: it is what
-    ! decides how many pixels the figure is rasterized into.
-    function render_eps(facecolor, transparent, bbox_inches, pad_inches) result(eps)
+    function render_eps(facecolor, transparent, bbox_inches, pad_inches, status) result(eps)
         character(len=*), intent(in), optional :: facecolor, bbox_inches
         logical, intent(in), optional :: transparent
         real(dp), intent(in), optional :: pad_inches
+        type(status_t), intent(out), optional :: status
         character(len=:), allocatable :: eps
         type(eps_renderer_t) :: r
-        call render_figure(r, facecolor, transparent, bbox_inches, pad_inches)
+        call check_pad_arg("render_eps", "pad_inches", pad_inches)
+        call render_figure(r, facecolor, transparent, bbox_inches, pad_inches, status)
         eps = r%bytes()
     end function render_eps
 
-    function render_png(facecolor, transparent, bbox_inches, pad_inches) result(png)
+    ! Unlike the vector formats, dpi is not decorative here: it is what
+    ! decides how many pixels the figure is rasterized into.
+    !
+    ! A PNG cropped with bbox_inches="tight" to more than MAX_PNG_PIXELS is a
+    ! failure the caller could not foresee: returned in status as
+    ! ERROR_SIZE, with an empty result, or without status the end of the
+    ! program with exit code 2. The vector formats take any size, and
+    ! their status is always ok.
+    !
+    ! dpi is the figure's own unless given here.
+    function render_png(facecolor, transparent, bbox_inches, pad_inches, dpi, status) result(png)
         character(len=*), intent(in), optional :: facecolor, bbox_inches
         logical, intent(in), optional :: transparent
-        real(dp), intent(in), optional :: pad_inches
+        real(dp), intent(in), optional :: pad_inches, dpi
+        type(status_t), intent(out), optional :: status
         character(len=:), allocatable :: png
         type(png_renderer_t) :: r
-        call r%set_dpi(fig_dpi)
-        call render_figure(r, facecolor, transparent, bbox_inches, pad_inches)
+        type(status_t) :: st
+        call check_pad_arg("render_png", "pad_inches", pad_inches)
+        if (present(dpi)) then
+            if (.not. ieee_is_finite(dpi) .or. dpi <= 0.0_dp) &
+                call contract_error("render_png: dpi must be finite and positive")
+            call r%set_dpi(dpi)
+        else
+            call r%set_dpi(fig_dpi)
+        end if
+        call render_figure(r, facecolor, transparent, bbox_inches, pad_inches, st)
+        if (present(status)) status = st
+        if (.not. st%ok()) then
+            png = ""
+            if (present(status)) return
+            write (error_unit, "(a)") "fplotlib: render_png: "//trim(st%message)
+            error stop 2
+        end if
         png = r%bytes()
     end function render_png
-
-    pure function lower(s) result(t)
-        character(len=*), intent(in) :: s
-        character(len=len(s)) :: t
-        integer :: i, c
-        do i = 1, len(s)
-            c = iachar(s(i:i))
-            if (c >= iachar("A") .and. c <= iachar("Z")) then
-                t(i:i) = achar(c + 32)
-            else
-                t(i:i) = s(i:i)
-            end if
-        end do
-    end function lower
 
 end module fplotlib_draw

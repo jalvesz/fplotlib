@@ -16,6 +16,8 @@
 ! paths, so all four formats show the same text.
 
 module fplotlib_backend_png
+    use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
+    use fplotlib_status, only: contract_error
     use fplotlib_style, only: dp
     use fplotlib_render
     use fplotlib_raster
@@ -30,7 +32,13 @@ module fplotlib_backend_png
     ! the only place a pixel size is decided.
     real(dp), parameter :: DEFAULT_DPI = 100.0_dp
 
-    type, extends(renderer_t) :: png_renderer_t
+    ! The most pixels a canvas may have: a hundred million, some 4 GB as
+    ! the rasterizer keeps them, well within what the encoder can count.
+    real(dp), parameter, public :: MAX_PNG_PIXELS = 1.0e8_dp
+
+    public :: png_pixels
+
+    type, extends(encoded_renderer_t) :: png_renderer_t
         type(canvas_t) :: cv
         type(pathbuf_t) :: pb
         real(dp) :: dpi = DEFAULT_DPI
@@ -43,19 +51,31 @@ module fplotlib_backend_png
         integer :: pw = 0, ph = 0
         character(len=:), allocatable :: rgb
     contains
-        procedure :: open_canvas => png_open_canvas
-        procedure :: close_canvas => png_close_canvas
-        procedure :: bytes => png_bytes
-        procedure :: draw_path => png_draw_path
-        procedure :: draw_rect => png_draw_rect
-        procedure :: draw_circle => png_draw_circle
-        procedure :: draw_markers => png_draw_markers
-        procedure :: draw_glyphs => png_draw_glyphs
-        procedure :: draw_image => png_draw_image
+        procedure :: open_canvas_impl => png_open_canvas
+        procedure :: close_canvas_impl => png_close_canvas
+        procedure :: bytes_impl => png_bytes
+        procedure :: draw_path_impl => png_draw_path
+        procedure :: draw_rect_impl => png_draw_rect
+        procedure :: draw_circle_impl => png_draw_circle
+        procedure :: draw_markers_impl => png_draw_markers
+        procedure :: draw_glyphs_impl => png_draw_glyphs
+        procedure :: draw_image_impl => png_draw_image
+        procedure :: begin_frame_impl => png_begin_frame
+        procedure :: end_frame_impl => png_end_frame
         procedure :: set_dpi => png_set_dpi
     end type png_renderer_t
 
 contains
+
+    ! How many pixels a canvas of width by height points has at dpi, counted
+    ! exactly as open_canvas sizes it, in reals so that no size overflows.
+    ! Every check of a PNG's size uses this, so that none can disagree.
+    pure function png_pixels(width, height, dpi) result(n)
+        real(dp), intent(in) :: width, height, dpi
+        real(dp) :: n, s
+        s = dpi/72.0_dp
+        n = max(1.0_dp, anint(width*s))*max(1.0_dp, anint(height*s))
+    end function png_pixels
 
     ! Has to be called before open_canvas, since the canvas is allocated at
     ! its final pixel size and never resampled.
@@ -63,6 +83,8 @@ contains
         class(png_renderer_t), intent(inout) :: self
         real(dp), intent(in) :: dpi
 
+        if (.not. ieee_is_finite(dpi) .or. dpi <= 0.0_dp) call contract_error("png: dpi must be finite and positive")
+        if (self%is_open) call contract_error("png: set dpi before opening the canvas")
         self%dpi = dpi
     end subroutine png_set_dpi
 
@@ -75,6 +97,11 @@ contains
         integer :: rgb(3), wpx, hpx
         real(dp) :: alpha, s
 
+        s = self%dpi/72.0_dp
+        if (png_pixels(width, height, self%dpi) > MAX_PNG_PIXELS) &
+            call contract_error("png: canvas has too many pixels at this dpi")
+        wpx = max(1, nint(width*s))
+        hpx = max(1, nint(height*s))
         ! No background colour means no figure patch at all, which is how
         ! transparent=True reaches the backend. The vector formats express
         ! that by drawing nothing; a raster has to say it, as alpha zero.
@@ -90,29 +117,46 @@ contains
         if (present(x0)) self%ox = x0
         if (present(y0)) self%oy = y0
 
-        self%width = width
-        self%height = height
-        s = self%dpi/72.0_dp
-        wpx = max(1, nint(width*s))
-        hpx = max(1, nint(height*s))
         call canvas_init(self%cv, wpx, hpx, s, rgb, alpha)
-        self%is_open = .true.
+        self%pb%curve_scale = self%cv%curve_scale
     end subroutine png_open_canvas
 
     subroutine png_close_canvas(self)
         class(png_renderer_t), intent(inout) :: self
         integer, allocatable :: rgba(:, :, :)
 
-        if (.not. self%is_open) return
         rgba = canvas_rgba(self%cv)
+        if (allocated(self%out)) deallocate (self%out)
         if (self%keep_pixels) then
             call pack_rgb(self, rgba)
         else
             self%out = png_encode(self%cv%w, self%cv%h, rgba)
         end if
         call canvas_free(self%cv)
-        self%is_open = .false.
     end subroutine png_close_canvas
+
+    subroutine png_begin_frame(self, matrix, clip)
+        class(png_renderer_t), intent(inout) :: self
+        real(dp), intent(in) :: matrix(6)
+        type(clip_t), intent(in) :: clip
+        real(dp) :: m(6)
+
+        ! renderer_t has checked the call and counts the frame.
+        ! Conjugate the point transform by the existing crop/scale map,
+        ! leaving all legacy path construction in origin-shifted pixels.
+        m = matrix
+        m(5) = (matrix(5) + (matrix(1) - 1.0_dp)*self%ox + matrix(3)*self%oy)*self%cv%scale
+        m(6) = (matrix(6) + matrix(2)*self%ox + (matrix(4) - 1.0_dp)*self%oy)*self%cv%scale
+        call canvas_begin_frame(self%cv, m, shifted_clip(self, clip))
+        self%pb%curve_scale = self%cv%curve_scale
+    end subroutine png_begin_frame
+
+    subroutine png_end_frame(self)
+        class(png_renderer_t), intent(inout) :: self
+
+        call canvas_end_frame(self%cv)
+        self%pb%curve_scale = self%cv%curve_scale
+    end subroutine png_end_frame
 
     ! GIF has no alpha to speak of, so the frame is flattened onto white
     ! here, which is what a viewer would do with it anyway.
@@ -123,6 +167,7 @@ contains
 
         self%pw = self%cv%w
         self%ph = self%cv%h
+        if (allocated(self%rgb)) deallocate (self%rgb)
         allocate (character(len=3*self%pw*self%ph) :: self%rgb)
         k = 0
         do y = 1, self%ph
@@ -141,11 +186,27 @@ contains
         class(png_renderer_t), intent(in) :: self
         character(len=:), allocatable :: b
 
+        integer, allocatable :: rgba(:, :, :)
+        integer :: k, x, y
+
         if (allocated(self%out)) then
             b = self%out
-        else
-            b = ""
+            return
         end if
+        ! A canvas kept as pixels for an animation is encoded on demand,
+        ! from the frame as it was flattened onto white.
+        allocate (rgba(4, self%pw, self%ph))
+        k = 0
+        do y = 1, self%ph
+            do x = 1, self%pw
+                rgba(1, x, y) = iachar(self%rgb(k + 1:k + 1))
+                rgba(2, x, y) = iachar(self%rgb(k + 2:k + 2))
+                rgba(3, x, y) = iachar(self%rgb(k + 3:k + 3))
+                rgba(4, x, y) = 255
+                k = k + 3
+            end do
+        end do
+        b = png_encode(self%pw, self%ph, rgba)
     end function png_bytes
 
     ! ------------------------------------------------------------------
@@ -188,6 +249,7 @@ contains
         type(paint_t), intent(in) :: paint
         real(dp) :: lw
 
+        if (.not. self%cv%identity_transform) return
         if (.not. pb_should_snap(self%pb)) return
         lw = 0.0_dp
         if (paint%stroked) lw = paint%line_width*self%cv%scale
@@ -204,7 +266,8 @@ contains
         p = paint
         p%clip = shifted_clip(self, paint%clip)
         if (paint%filled) then
-            call fill_path_buf(self%cv, self%pb, paint%fill_rgb, paint%fill_alpha, p%clip)
+            call fill_path_buf(self%cv, self%pb, paint%fill_rgb, paint%fill_alpha, p%clip, &
+                               evenodd=paint%fill_rule == FILL_EVENODD)
         end if
         if (paint%stroked) call stroke_path_buf(self%cv, self%pb, p)
     end subroutine paint_buf
@@ -300,7 +363,9 @@ contains
         integer :: i, n
 
         rp = r*self%cv%scale
-        n = max(12, min(256, ceiling(rp*3.0_dp)))
+        ! As many segments as the circle is big on the canvas, the frame's
+        ! scale included; past 100 pixels of radius the most there are.
+        n = max(12, min(256, ceiling(min(rp*self%cv%curve_scale, 100.0_dp)*3.0_dp)))
         call pb_reset(self%pb)
         do i = 1, n
             a = TWOPI*real(i - 1, dp)/real(n, dp)
@@ -371,7 +436,6 @@ contains
         integer :: i, j, p, nv, np
         type(paint_t) :: pp
 
-        if (run%n == 0) return
         ca = cos(angle*3.141592653589793_dp/180.0_dp)
         sa = sin(angle*3.141592653589793_dp/180.0_dp)
         ax = tx(self, x)
@@ -437,7 +501,7 @@ contains
         class(png_renderer_t), intent(inout) :: self
         real(dp), intent(in) :: x, y, w, h
         integer, intent(in) :: nx, ny
-        integer, intent(in) :: rgba(4, nx, ny)
+        integer, intent(in) :: rgba(:, :, :)
         type(paint_t), intent(in) :: paint
 
         call blit_image(self%cv, x - self%ox, y - self%oy, w, h, rgba, nx, ny, &
