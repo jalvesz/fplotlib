@@ -22,9 +22,15 @@ module fplotlib
     use fplotlib_artist
     use fplotlib_draw
     use fplotlib_status, only: status_t, contract_error, set_status, STATUS_OK, ERROR_IO, ERROR_SIZE, MESSAGE_LEN
-    use fplotlib_io, only: file_ext, write_bytes
+    use fplotlib_io, only: file_ext, write_bytes, read_bytes, dir_name
     use, intrinsic :: iso_fortran_env, only: error_unit
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
+    use fplotlib_markdown, only: md_typeset, md_typeset_files, md_document_t, md_figure_t, &
+                                 md_directive_cb, md_body_cb, md_heading_cb
+    use fplotlib_typeset, only: typeset_context_t, ts_page_count, ts_page_draw, ts_page_size
+    use fplotlib_scene, only: frame_t, recording_renderer_t, paged_document_t
+    use fplotlib_document, only: save_document
+    use fplotlib_report, only: report_t, document_asset_t
     implicit none
     private
 
@@ -57,7 +63,7 @@ module fplotlib
     public :: step, stem, pie, boxplot, violinplot
     public :: axis, set_aspect, tick_params, spines
     public :: margins, autoscale
-    public :: text, annotate, figtext, set_facecolor
+    public :: text, annotate, figtext, textbox, set_facecolor
     public :: xticks, yticks, minorticks_on, locator_params
     public :: ticklabel_format, tick_format, tick_locator
     public :: imshow, colorbar, contour, contourf, clabel
@@ -80,6 +86,9 @@ module fplotlib
     public :: close, gcf
     public :: axes, subplots, sca
     public :: style_use, rc
+    public :: typeset, typeset_file, frame_t, md_figure_t, capture_figure, named_figure
+    public :: report_t, document_asset_t, new_report, markdown, include_figure, &
+              include_table, save, render_report
 
     ! A handle to one axes of the current figure, so that a script can say
     ! ax%plot(...) instead of selecting an axes and then drawing into it.
@@ -138,6 +147,7 @@ module fplotlib
         procedure :: vlines => ax_vlines
         procedure :: text => ax_text
         procedure :: annotate => ax_annotate
+        procedure :: textbox => ax_textbox
         procedure :: set_title => ax_set_title
         procedure :: set_xlabel => ax_set_xlabel
         procedure :: set_ylabel => ax_set_ylabel
@@ -228,6 +238,30 @@ module fplotlib
     interface violinplot
         module procedure violinplot_one, violinplot_many
     end interface violinplot
+
+    ! A document: Markdown with TeX math, set by TeX's rules into pages.
+    interface typeset
+        module procedure typeset_text, typeset_lines
+    end interface typeset
+
+    interface typeset_file
+        module procedure typeset_file_one, typeset_file_many
+    end interface typeset_file
+
+    ! Immediate-mode report builder (thin facade over report_t).
+    interface markdown
+        module procedure markdown_text, markdown_lines
+    end interface markdown
+
+    interface include_table
+        module procedure include_table_char, include_table_real, include_table_int
+    end interface include_table
+
+    type(report_t), save :: current_report
+
+    type :: text_buf_t
+        character(len=:), allocatable :: s
+    end type text_buf_t
 
     interface subplots
         module procedure subplots_grid, subplots_row, subplots_one
@@ -2096,6 +2130,30 @@ contains
                   transform=transform)
     end subroutine ax_text
 
+    subroutine ax_textbox(self, x, y, text, width, coords, ha, va, fontsize, &
+                          align, color, facecolor, edgecolor, lw, alpha, pad, &
+                          radius, zorder)
+        class(axes), intent(in) :: self
+        real(dp), intent(in) :: x, y
+        character(len=*), intent(in) :: text
+        real(dp), intent(in), optional :: width, fontsize, lw, alpha, pad, radius, zorder
+        character(len=*), intent(in), optional :: coords, ha, va, align
+        character(len=*), intent(in), optional :: color, facecolor, edgecolor
+
+        ! Arguments checked as tools/gen_arg_checks.py tables them.
+        call check_size_arg("textbox", "width", width)
+        call check_size_arg("textbox", "fontsize", fontsize)
+        call check_size_arg("textbox", "lw", lw)
+        call check_unit_arg("textbox", "alpha", alpha)
+        call check_size_arg("textbox", "pad", pad)
+        call check_size_arg("textbox", "radius", radius)
+        call check_size_arg("textbox", "zorder", zorder)
+
+        call ax_sca(self)
+        call textbox(x, y, text, width, coords, ha, va, fontsize, align, &
+                     color, facecolor, edgecolor, lw, alpha, pad, radius, zorder)
+    end subroutine ax_textbox
+
     subroutine ax_annotate(self, s, x, y, xtext, ytext, color, fontsize, ha, &
                            fontweight, fontstyle, transform)
         class(axes), intent(in) :: self
@@ -3383,6 +3441,25 @@ contains
         a%n_texts = a%n_texts + 1
         it = a%n_texts
     end subroutine push_text
+
+    subroutine push_textbox(a, it)
+        type(axes_t), intent(inout) :: a
+        integer, intent(out) :: it
+        type(textbox_t), allocatable :: tmp(:)
+        integer :: cap, i
+
+        if (.not. allocated(a%textboxes)) allocate (a%textboxes(INIT_SLOTS))
+        cap = size(a%textboxes)
+        if (a%n_textboxes >= cap) then
+            allocate (tmp(2*cap))
+            do i = 1, cap
+                tmp(i) = a%textboxes(i)
+            end do
+            call move_alloc(tmp, a%textboxes)
+        end if
+        a%n_textboxes = a%n_textboxes + 1
+        it = a%n_textboxes
+    end subroutine push_textbox
 
     ! Start a new series of the given kind and return its index, applying the
     ! shared bookkeeping (point count, color cycling, label).
@@ -5583,6 +5660,12 @@ contains
                 call contract_error("add_path: unknown code '"//codes(j:j)//"'")
             end select
         end do
+        ! As in matplotlib, and as every backend takes a path: a contour
+        ! begins with a move. A path far off the canvas is cut before the
+        ! renderer would check it, so it is checked here.
+        if (nv > 0) then
+            if (v(1) /= VERB_MOVE) call contract_error("add_path: a path must begin with M")
+        end if
         if (np < 2 .or. np > min(size(x), size(y))) then
             call contract_error("add_path: codes need "//int_to_str(np)//" points, given " &
                                 //int_to_str(min(size(x), size(y))))
@@ -7165,6 +7248,83 @@ contains
         ax(cur_i)%texts(it)%in_fig = .true.
     end subroutine figtext
 
+    ! Rich typeset Markdown box placed in axes, figure, or data coordinates.
+    ! width is in points (0 defaults to the full axes or figure width).
+    subroutine textbox(x, y, text, width, coords, ha, va, fontsize, align, &
+                       color, facecolor, edgecolor, lw, alpha, pad, radius, &
+                       zorder)
+        real(dp), intent(in) :: x, y
+        character(len=*), intent(in) :: text
+        real(dp), intent(in), optional :: width, fontsize, lw, alpha, pad, radius, zorder
+        character(len=*), intent(in), optional :: coords, ha, va, align
+        character(len=*), intent(in), optional :: color, facecolor, edgecolor
+        character(len=7) :: col
+        integer :: it
+
+        ! Arguments checked as tools/gen_arg_checks.py tables them.
+        call check_size_arg("textbox", "width", width)
+        call check_size_arg("textbox", "fontsize", fontsize)
+        call check_size_arg("textbox", "lw", lw)
+        call check_unit_arg("textbox", "alpha", alpha)
+        call check_size_arg("textbox", "pad", pad)
+        call check_size_arg("textbox", "radius", radius)
+        call check_size_arg("textbox", "zorder", zorder)
+
+        if (.not. (ieee_is_finite(x) .and. ieee_is_finite(y))) return
+        call ensure_fig()
+        call push_textbox(ax(cur_i), it)
+        associate (tb => ax(cur_i)%textboxes(it))
+            tb%x = x
+            tb%y = y
+            tb%text = text
+            tb%width = 0.0_dp
+            tb%fontsize = 10.0_dp
+            tb%lw = 0.8_dp
+            tb%alpha = 1.0_dp
+            tb%pad = -1.0_dp
+            tb%radius = 0.0_dp
+            tb%zorder = 5.0_dp
+            tb%coords = "axes"
+            tb%ha = "left"
+            tb%va = "top"
+            tb%align = "justify"
+            tb%color = rc_text_color
+            tb%facecolor = ""
+            tb%edgecolor = ""
+            if (present(width)) tb%width = width
+            if (present(coords)) tb%coords = coords
+            if (present(ha)) tb%ha = ha
+            if (present(va)) tb%va = va
+            if (present(fontsize)) tb%fontsize = fontsize
+            if (present(align)) tb%align = align
+            if (present(color)) then
+                col = resolve_color(color)
+                if (len_trim(col) > 0) tb%color = col
+            end if
+            if (present(facecolor)) then
+                if (lower(trim(facecolor)) == "none") then
+                    tb%facecolor = ""
+                else
+                    col = resolve_color(facecolor)
+                    if (len_trim(col) > 0) tb%facecolor = col
+                end if
+            end if
+            if (present(edgecolor)) then
+                if (lower(trim(edgecolor)) == "none") then
+                    tb%edgecolor = ""
+                else
+                    col = resolve_color(edgecolor)
+                    if (len_trim(col) > 0) tb%edgecolor = col
+                end if
+            end if
+            if (present(lw)) tb%lw = lw
+            if (present(alpha)) tb%alpha = alpha
+            if (present(pad)) tb%pad = pad
+            if (present(radius)) tb%radius = radius
+            if (present(zorder)) tb%zorder = zorder
+        end associate
+    end subroutine textbox
+
     ! Text at (xtext, ytext) with an arrow pointing at (x, y).
     subroutine annotate(s, x, y, xtext, ytext, color, fontsize, ha, &
                         fontweight, fontstyle, va, rotation, bbox_facecolor, &
@@ -7498,6 +7658,300 @@ contains
         end if
         call save_bytes("savefig", filename, data, status)
     end subroutine savefig
+
+    ! ------------------------------------------------------------------
+    ! Documents. typeset sets a MyST Markdown document (fplotlib_markdown)
+    ! into pages with TeX's paragraph and page layout (fplotlib_typeset),
+    ! and writes them as save_document does: a PDF holds every page; an
+    ! SVG, PNG or EPS file holds one, so a document of several pages is
+    ! written as name-1.svg, name-2.svg, ... A PNG is 150 dpi unless dpi
+    ! is given. As for savefig, a file that cannot be written is returned
+    ! in status when the caller passes one, and otherwise stops the program
+    ! with exit code 2. The figures are not touched. on_directive,
+    ! on_body and on_heading are a template's callbacks (fplotlib_markdown);
+    ! the document is set twice, as LaTeX is run twice, and they are
+    ! called in both passes. A callback may declare and set a nested
+    ! md_document_t or call typeset without affecting the outer document.
+    ! ------------------------------------------------------------------
+
+    ! Capture the current figure as a vector frame_t, or as a named
+    ! md_figure_t ready to pass to typeset(..., figures=...).
+    subroutine capture_figure(frame, facecolor, transparent, bbox_inches, pad_inches)
+        type(frame_t), intent(out) :: frame
+        character(len=*), intent(in), optional :: facecolor, bbox_inches
+        logical, intent(in), optional :: transparent
+        real(dp), intent(in), optional :: pad_inches
+
+        ! Arguments checked as tools/gen_arg_checks.py tables them.
+        call check_pad_arg("capture_figure", "pad_inches", pad_inches)
+
+        call render_frame(frame, facecolor, transparent, bbox_inches, pad_inches)
+    end subroutine capture_figure
+
+    subroutine named_figure(fig, name, facecolor, transparent, bbox_inches, pad_inches)
+        type(md_figure_t), intent(out) :: fig
+        character(len=*), intent(in) :: name
+        character(len=*), intent(in), optional :: facecolor, bbox_inches
+        logical, intent(in), optional :: transparent
+        real(dp), intent(in), optional :: pad_inches
+
+        ! Arguments checked as tools/gen_arg_checks.py tables them.
+        call check_pad_arg("named_figure", "pad_inches", pad_inches)
+
+        fig%name = trim(adjustl(name))
+        call render_frame(fig%frame, facecolor, transparent, bbox_inches, pad_inches)
+    end subroutine named_figure
+
+    recursive subroutine typeset_text(text, filename, dpi, status, on_directive, on_body, &
+                                      on_heading, figures)
+        character(len=*), intent(in) :: text, filename
+        real(dp), intent(in), optional :: dpi
+        type(status_t), intent(out), optional :: status
+        procedure(md_directive_cb), optional :: on_directive
+        procedure(md_body_cb), optional :: on_body
+        procedure(md_heading_cb), optional :: on_heading
+        type(md_figure_t), intent(in), optional :: figures(:)
+        type(md_document_t) :: doc
+        call check_typeset_args(filename, dpi)
+        call md_typeset(doc, text, on_directive=on_directive, on_body=on_body, &
+                        on_heading=on_heading, figures=figures)
+        call write_pages(doc%engine, filename, dpi, status)
+    end subroutine typeset_text
+
+    ! The document as an array of lines, which is how a Fortran program
+    ! most easily spells one; trailing blanks are dropped, so a hard line
+    ! break is a backslash at the end of a line.
+    recursive subroutine typeset_lines(lines, filename, dpi, status, on_directive, on_body, &
+                                       on_heading, figures)
+        character(len=*), intent(in) :: lines(:), filename
+        real(dp), intent(in), optional :: dpi
+        type(status_t), intent(out), optional :: status
+        procedure(md_directive_cb), optional :: on_directive
+        procedure(md_body_cb), optional :: on_body
+        procedure(md_heading_cb), optional :: on_heading
+        type(md_figure_t), intent(in), optional :: figures(:)
+        character(len=:), allocatable :: text
+        integer :: k
+        text = ""
+        do k = 1, size(lines)
+            text = text//trim(lines(k))//new_line("a")
+        end do
+        call typeset_text(text, filename, dpi, status, &
+                          on_directive=on_directive, on_body=on_body, &
+                          on_heading=on_heading, figures=figures)
+    end subroutine typeset_lines
+
+    ! Read a single Markdown file and typeset it, resolving relative paths
+    ! (such as :::{literalinclude}) against the file's directory.
+    recursive subroutine typeset_file_one(md_file, filename, dpi, status, on_directive, &
+                                          on_body, on_heading, figures)
+        character(len=*), intent(in) :: md_file, filename
+        real(dp), intent(in), optional :: dpi
+        type(status_t), intent(out), optional :: status
+        procedure(md_directive_cb), optional :: on_directive
+        procedure(md_body_cb), optional :: on_body
+        procedure(md_heading_cb), optional :: on_heading
+        type(md_figure_t), intent(in), optional :: figures(:)
+        character(len=:), allocatable :: raw
+        type(md_document_t) :: doc
+        type(status_t) :: local
+
+        call check_typeset_args(filename, dpi, "typeset_file")
+        call read_bytes(md_file, raw, local)
+        if (.not. local%ok()) then
+            call fail_run("typeset_file", local%code, trim(local%message), status)
+            return
+        end if
+        call md_typeset(doc, raw, on_directive=on_directive, on_body=on_body, &
+                        on_heading=on_heading, base_dir=dir_name(md_file), figures=figures)
+        call write_pages(doc%engine, filename, dpi, status, "typeset_file")
+    end subroutine typeset_file_one
+
+    ! Read several Markdown files and typeset them as one document: YAML
+    ! front matter comes from the first file, labels and cross-references
+    ! resolve across all files, and each file keeps its own base directory.
+    recursive subroutine typeset_file_many(md_files, filename, dpi, status, on_directive, &
+                                           on_body, on_heading, figures)
+        character(len=*), intent(in) :: md_files(:), filename
+        real(dp), intent(in), optional :: dpi
+        type(status_t), intent(out), optional :: status
+        procedure(md_directive_cb), optional :: on_directive
+        procedure(md_body_cb), optional :: on_body
+        procedure(md_heading_cb), optional :: on_heading
+        type(md_figure_t), intent(in), optional :: figures(:)
+        type(text_buf_t), allocatable :: raws(:), dir_bufs(:)
+        character(len=:), allocatable :: texts(:), dirs(:)
+        type(md_document_t) :: doc
+        type(status_t) :: local
+        integer :: n, k, max_t, max_d
+
+        call check_typeset_args(filename, dpi, "typeset_file")
+        n = size(md_files)
+        if (n == 0) then
+            call md_typeset(doc, "", on_directive=on_directive, on_body=on_body, &
+                            on_heading=on_heading, figures=figures)
+            call write_pages(doc%engine, filename, dpi, status, "typeset_file")
+            return
+        end if
+        allocate (raws(n), dir_bufs(n))
+        max_t = 1
+        max_d = 1
+        do k = 1, n
+            call read_bytes(md_files(k), raws(k)%s, local)
+            if (.not. local%ok()) then
+                call fail_run("typeset_file", local%code, trim(local%message), status)
+                return
+            end if
+            dir_bufs(k)%s = dir_name(md_files(k))
+            max_t = max(max_t, len(raws(k)%s) + 1)
+            max_d = max(max_d, len(dir_bufs(k)%s))
+        end do
+        allocate (character(len=max_t) :: texts(n))
+        allocate (character(len=max_d) :: dirs(n))
+        do k = 1, n
+            texts(k) = raws(k)%s//new_line("a")
+            dirs(k) = dir_bufs(k)%s
+        end do
+        call md_typeset_files(doc, texts, dirs, on_directive=on_directive, &
+                              on_body=on_body, on_heading=on_heading, figures=figures)
+        call write_pages(doc%engine, filename, dpi, status, "typeset_file")
+    end subroutine typeset_file_many
+
+    ! ------------------------------------------------------------------
+    ! Immediate-mode reports: thin procedural facade over current_report.
+    ! ------------------------------------------------------------------
+
+    subroutine new_report()
+        call current_report%clear()
+    end subroutine new_report
+
+    subroutine markdown_text(text)
+        character(len=*), intent(in) :: text
+        call current_report%markdown(text)
+    end subroutine markdown_text
+
+    subroutine markdown_lines(lines)
+        character(len=*), intent(in) :: lines(:)
+        call current_report%markdown(lines)
+    end subroutine markdown_lines
+
+    subroutine include_figure(caption, label, width, align, facecolor, transparent, &
+                              bbox_inches, pad_inches)
+        character(len=*), intent(in), optional :: caption, label, width, align
+        character(len=*), intent(in), optional :: facecolor, bbox_inches
+        logical, intent(in), optional :: transparent
+        real(dp), intent(in), optional :: pad_inches
+        type(frame_t) :: frame
+
+        ! Arguments checked as tools/gen_arg_checks.py tables them.
+        call check_pad_arg("include_figure", "pad_inches", pad_inches)
+
+        call render_frame(frame, facecolor, transparent, bbox_inches, pad_inches)
+        call current_report%include_frame(frame, caption=caption, label=label, &
+                                          width=width, align=align)
+    end subroutine include_figure
+
+    subroutine include_table_char(cells, columns, caption, label, align)
+        character(len=*), intent(in) :: cells(:, :)
+        character(len=*), intent(in), optional :: columns(:)
+        character(len=*), intent(in), optional :: caption, label
+        character(len=*), intent(in), optional :: align(:)
+        call current_report%include_table(cells, columns=columns, caption=caption, &
+                                          label=label, align=align)
+    end subroutine include_table_char
+
+    subroutine include_table_real(values, columns, caption, label, fmt, align)
+        real(dp), intent(in) :: values(:, :)
+        character(len=*), intent(in), optional :: columns(:)
+        character(len=*), intent(in), optional :: caption, label, fmt
+        character(len=*), intent(in), optional :: align(:)
+        call current_report%include_table(values, columns=columns, caption=caption, &
+                                          label=label, fmt=fmt, align=align)
+    end subroutine include_table_real
+
+    subroutine include_table_int(values, columns, caption, label, align)
+        integer, intent(in) :: values(:, :)
+        character(len=*), intent(in), optional :: columns(:)
+        character(len=*), intent(in), optional :: caption, label
+        character(len=*), intent(in), optional :: align(:)
+        call current_report%include_table(values, columns=columns, caption=caption, &
+                                          label=label, align=align)
+    end subroutine include_table_int
+
+    subroutine save(filename, dpi, status)
+        character(len=*), intent(in) :: filename
+        real(dp), intent(in), optional :: dpi
+        type(status_t), intent(out), optional :: status
+        call current_report%save(filename, dpi=dpi, status=status)
+    end subroutine save
+
+    subroutine render_report(format, assets, dpi, status)
+        character(len=*), intent(in) :: format
+        type(document_asset_t), allocatable, intent(out) :: assets(:)
+        real(dp), intent(in), optional :: dpi
+        type(status_t), intent(out), optional :: status
+        call current_report%export(format, assets, dpi=dpi, status=status)
+    end subroutine render_report
+
+    ! The pages set last, each recorded into a frame of the paper's size
+    ! and colour, written as a paged document. A document with no pages
+    ! is written as one blank page.
+    recursive subroutine write_pages(ts, filename, dpi, status, caller)
+        type(typeset_context_t), intent(in) :: ts
+        character(len=*), intent(in) :: filename
+        real(dp), intent(in), optional :: dpi
+        type(status_t), intent(out), optional :: status
+        character(len=*), intent(in), optional :: caller
+        type(paged_document_t) :: document
+        type(recording_renderer_t) :: recorder
+        type(frame_t) :: page
+        type(status_t) :: local
+        character(len=:), allocatable :: who
+        real(dp) :: w, h, res
+        integer :: p, col, bg(3)
+
+        who = "typeset"
+        if (present(caller)) who = caller
+        res = 150.0_dp
+        if (present(dpi)) res = dpi
+        call ts_page_size(ts, w, h, col)
+        bg = [ishft(col, -16), iand(ishft(col, -8), 255), iand(col, 255)]
+        do p = 1, max(1, ts_page_count(ts))
+            call recorder%open_canvas(w, h, bg_rgb=bg)
+            if (p <= ts_page_count(ts)) call ts_page_draw(ts, recorder, p)
+            call recorder%close_canvas()
+            call recorder%take(page)
+            call document%add_page(page)
+        end do
+        call save_document(document, filename, local, res)
+        if (.not. local%ok()) then
+            call fail_run(who, local%code, trim(local%message), status)
+        else if (present(status)) then
+            status = local
+        end if
+    end subroutine write_pages
+
+    ! The file's format and the resolution, checked before the document is
+    ! set: a broken one is the caller's bug, found without the work.
+    subroutine check_typeset_args(filename, dpi, caller)
+        character(len=*), intent(in) :: filename
+        real(dp), intent(in), optional :: dpi
+        character(len=*), intent(in), optional :: caller
+        character(len=:), allocatable :: who
+
+        who = "typeset"
+        if (present(caller)) who = caller
+        select case (file_ext(filename))
+        case ("svg", "pdf", "eps", "png")
+        case default
+            call contract_error(who//": supported formats are .svg, .pdf, .eps and .png, not ." &
+                                //file_ext(filename))
+        end select
+        if (present(dpi)) then
+            if (.not. ieee_is_finite(dpi) .or. dpi <= 0.0_dp) &
+                call contract_error(who//": dpi must be finite and positive")
+        end if
+    end subroutine check_typeset_args
 
     ! A failure a correct program can meet at run time: returned in status
     ! when the caller passed one, and otherwise the end of the program, with

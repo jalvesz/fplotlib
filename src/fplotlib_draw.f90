@@ -29,6 +29,7 @@ module fplotlib_draw
     use fplotlib_state
     use fplotlib_artist
     use fplotlib_scene, only: frame_t, recording_renderer_t
+    use fplotlib_markdown, only: md_typeset_box
     implicit none
     public
 
@@ -286,7 +287,8 @@ contains
             ! and the row below puts its title into the same gap.
             if (ax(i)%g_row > 0) inner_t = max(inner_t, decor_top(ax(i)))
         end do
-        if (len_trim(fig_suptitle) > 0) need_t = need_t + LABEL_BOX * fig_suptitle_size
+        if (len_trim(fig_suptitle) > 0) need_t = need_t + (1.0_dp - SUPTITLE_Y) * H &
+            + text_ascent(fig_suptitle_size) + text_descent(fig_suptitle_size)
 
         ! A figure too small for its decorations keeps the layout it had,
         ! with the warning matplotlib gives, rather than axes of negative
@@ -362,7 +364,7 @@ contains
             if (len_trim(a%cbar_label) > 0) v = v + LABEL_PAD &
                 + text_ascent(a%xlabel_size) + text_descent(a%xlabel_size)
         end if
-        if (a%xtick_rot /= 0.0_dp) v = v + tick_label_width(a) * &
+        if (.not. a%x_top .and. a%xtick_rot /= 0.0_dp) v = v + xtick_label_width(a) * &
                                         abs(sin(a%xtick_rot * PI / 180.0_dp))
         if (len_trim(a%xlabel) > 0) &
             v = v + a%xlabel_pad + text_ascent(a%xlabel_size) &
@@ -434,17 +436,20 @@ contains
     pure elemental function title_gap(a) result(v)
         type(axes_t), intent(in) :: a
         real(dp) :: v
-        v = xtop_band(a) + 0.5_dp*a%title_size
+        v = xtop_band(a) + TITLE_PAD
     end function title_gap
 
     function decor_top(a) result(v)
         type(axes_t), intent(in) :: a
-        real(dp) :: v
-        v = xtop_band(a)
-        if (len_trim(a%title) > 0) v = title_gap(a) + text_ascent(a%title_size)
+        real(dp) :: v, rot_h
+        rot_h = 0.0_dp
+        if (a%x_top .and. a%xtick_rot /= 0.0_dp) &
+            rot_h = xtick_label_width(a) * abs(sin(a%xtick_rot * PI / 180.0_dp))
+        v = xtop_band(a) + rot_h
+        if (len_trim(a%title) > 0) v = max(v, title_gap(a) + text_ascent(a%title_size))
     end function decor_top
 
-    ! Widest tick label an axes will draw, in points, measured as it will
+    ! Widest y tick label an axes will draw, in points, measured as it will
     ! be set.
     function tick_label_width(a) result(v)
         type(axes_t), intent(in) :: a
@@ -461,9 +466,31 @@ contains
             call tick_label(a%ytick_labeled, a%ytick_lab, i, t(i), a%ysc, &
                             axis_fmt(t, nt, a, .false., min(ymin, ymax), &
                                      max(ymin, ymax)), du, lbl, ln)
-            v = max(v, str_width(lbl(1:ln), a%ytick_size))
+            if (ln > 0) v = max(v, str_width(lbl(1:ln), a%ytick_size))
         end do
     end function tick_label_width
+
+    ! Widest x tick label an axes will draw, in points, measured as it will
+    ! be set.
+    function xtick_label_width(a) result(v)
+        type(axes_t), intent(in) :: a
+        real(dp) :: v, xmin, xmax, ymin, ymax
+        real(dp) :: t(MAX_TICKS)
+        character(len=64) :: lbl
+        integer :: nt, i, ln, du
+        v = 0.0_dp
+        if (a%xaxis_off .or. a%xticklabels_off) return
+        call compute_limits(a, xmin, xmax, ymin, ymax)
+        call axis_ticks(a%n_xticks, a%xtick_pos, min(xmin, xmax), max(xmin, xmax), &
+                        a%xsc, nbins_for(a%xtick_nbins, 0.0_dp, a%xtick_size, .true.), &
+                        a%x_date, t, nt, du, a%xtick_base)
+        do i = 1, nt
+            call tick_label(a%xtick_labeled, a%xtick_lab, i, t(i), a%xsc, &
+                            axis_fmt(t, nt, a, .true., min(xmin, xmax), &
+                                     max(xmin, xmax)), du, lbl, ln)
+            if (ln > 0) v = max(v, str_width(lbl(1:ln), a%xtick_size))
+        end do
+    end function xtick_label_width
 
     ! Whether an artist shows up in the legend at all. matplotlib keeps
     ! out anything whose label starts with an underscore, which is how an
@@ -3461,7 +3488,7 @@ contains
         ! sitting on the box, which would run straight through it.
         if (len_trim(a%title) > 0) &
             call append_text(b, cx, cy - R - 4.0_dp - 1.6_dp*a%xtick_size &
-                             - 0.5_dp*a%title_size, trim(a%title), &
+                             - TITLE_PAD, trim(a%title), &
                              "center", a%title_size, rc_text_color)
     end subroutine render_polar
 
@@ -3789,7 +3816,7 @@ contains
         call render_series3d(b, a, M, bl, bt, side)
 
         if (len_trim(a%title) > 0) &
-            call append_text(b, bl + 0.5_dp*side, bt - 0.5_dp*a%title_size, &
+            call append_text(b, bl + 0.5_dp*side, bt - TITLE_PAD, &
                              trim(a%title), "center", a%title_size, rc_text_color)
     end subroutine render_axes3d
 
@@ -4733,7 +4760,103 @@ contains
         end if
 
         call render_table(b, a, ax_l, ax_w, ax_b, ax_h)
+        call render_textboxes(b, a, xmin, xmax, ymin, ymax, ax_l, ax_w, ax_b, ax_h, &
+                              xsc, ysc, W, H)
     end subroutine render_axes
+
+    ! Render rich typeset Markdown textboxes attached to an axes (in axes,
+    ! figure, or data coordinates).
+    subroutine render_textboxes(b, a, xmin, xmax, ymin, ymax, ax_l, ax_w, ax_b, ax_h, &
+                                xsc, ysc, W, H)
+        class(renderer_t), intent(inout) :: b
+        type(axes_t), intent(in) :: a
+        real(dp), intent(in) :: xmin, xmax, ymin, ymax
+        real(dp), intent(in) :: ax_l, ax_w, ax_b, ax_h, W, H
+        type(scale_t), intent(in) :: xsc, ysc
+        type(frame_t) :: frame
+        type(clip_t) :: no_clip
+        real(dp) :: px, py, bw, bh, tx, ty, w_use
+        character(len=16) :: col
+        integer, allocatable :: ord(:)
+        integer :: i, j, idx, key
+
+        if (a%n_textboxes <= 0) return
+        ! Stable insertion sort by zorder so higher-zorder boxes draw on top.
+        allocate (ord(a%n_textboxes))
+        do i = 1, a%n_textboxes
+            ord(i) = i
+        end do
+        do i = 2, a%n_textboxes
+            key = ord(i)
+            j = i - 1
+            do while (j >= 1)
+                if (a%textboxes(ord(j))%zorder <= a%textboxes(key)%zorder) exit
+                ord(j + 1) = ord(j)
+                j = j - 1
+            end do
+            ord(j + 1) = key
+        end do
+
+        do i = 1, a%n_textboxes
+            idx = ord(i)
+            associate (tb => a%textboxes(idx))
+                if (.not. allocated(tb%text)) cycle
+                select case (lower(trim(tb%coords)))
+                case ("figure")
+                    px = tb%x*W
+                    py = (1.0_dp - tb%y)*H
+                    w_use = W
+                case ("data")
+                    px = map_x(tb%x, xmin, xmax, ax_l, ax_w, xsc)
+                    py = map_y(tb%y, ymin, ymax, ax_b, ax_h, ysc)
+                    w_use = ax_w
+                case default
+                    px = ax_l + tb%x*ax_w
+                    py = ax_b - tb%y*ax_h
+                    w_use = ax_w
+                end select
+                if (.not. (ieee_is_finite(px) .and. ieee_is_finite(py))) cycle
+                if (tb%width > 0.0_dp) w_use = tb%width
+                col = tb%color
+                if (len_trim(col) == 0) col = rc_text_color
+                if (tb%pad >= 0.0_dp) then
+                    call md_typeset_box(tb%text, w_use, frame, fontsize=tb%fontsize, &
+                                        align=trim(tb%align), color=trim(col), &
+                                        bg_color=trim(tb%facecolor), &
+                                        border_color=trim(tb%edgecolor), &
+                                        border_width=tb%lw, alpha=tb%alpha, &
+                                        pad=tb%pad, radius=tb%radius)
+                else
+                    call md_typeset_box(tb%text, w_use, frame, fontsize=tb%fontsize, &
+                                        align=trim(tb%align), color=trim(col), &
+                                        bg_color=trim(tb%facecolor), &
+                                        border_color=trim(tb%edgecolor), &
+                                        border_width=tb%lw, alpha=tb%alpha, &
+                                        radius=tb%radius)
+                end if
+                call frame%metrics(bw, bh)
+                select case (lower(trim(tb%ha)))
+                case ("center")
+                    tx = px - 0.5_dp*bw
+                case ("right")
+                    tx = px - bw
+                case default
+                    tx = px
+                end select
+                select case (lower(trim(tb%va)))
+                case ("center")
+                    ty = py - 0.5_dp*bh
+                case ("bottom")
+                    ty = py - bh
+                case default
+                    ty = py
+                end select
+                call b%begin_frame([1.0_dp, 0.0_dp, 0.0_dp, 1.0_dp, tx, ty], no_clip)
+                call frame%draw(b)
+                call b%end_frame()
+            end associate
+        end do
+    end subroutine render_textboxes
 
     ! Draw the whole figure into any backend. Everything above this point is
     ! format independent; the only thing render_svg and its PDF and PNG

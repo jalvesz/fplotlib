@@ -92,6 +92,9 @@ BY_PROC = {
     ('add_ellipse', 'width'): 'finite', ('add_ellipse', 'height'): 'finite',
     ('secondary_xaxis', 'scale'): 'finite', ('secondary_yaxis', 'scale'): 'finite',
     ('quiver3d', 'length'): 'finite',
+    ('textbox', 'width'): 'size',
+    ('textbox', 'pad'): 'size',
+    ('textbox', 'zorder'): 'size',
 }
 ARRAYS = {
     'bounds': 'finite', 'width_ratios': 'positive', 'height_ratios': 'positive', 'bbox_to_anchor': 'finite',
@@ -117,7 +120,8 @@ INTS = {
     'num': 'own', 'loc': 'own', 'shape': 'own',
 }
 # spy's m and n only set the axis limits; they allocate nothing.
-INTS_BY_PROC = {('spy', 'm'): 'any', ('spy', 'n'): 'any', ('hist2d', 'bins'): 'grid'}
+INTS_BY_PROC = {('spy', 'm'): 'any', ('spy', 'n'): 'any', ('hist2d', 'bins'): 'grid',
+                ('include_table', 'values'): 'any'}
 IHELPER = {'count': 'check_count_arg', 'grid': 'check_grid_arg', 'nonneg': 'check_nonneg_arg',
            'digits': 'check_digits_arg'}
 IAHELPER = {'count': 'check_count_args', 'grid': 'check_grid_args'}

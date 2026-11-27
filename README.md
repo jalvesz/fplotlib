@@ -1,9 +1,12 @@
 # fplotlib
 
-[![CI](https://github.com/certik/fplotlib/actions/workflows/ci.yml/badge.svg)](https://github.com/certik/fplotlib/actions/workflows/ci.yml)
+[![CI](https://github.com/fortran-lang/fplotlib/actions/workflows/ci.yml/badge.svg)](https://github.com/fortran-lang/fplotlib/actions/workflows/ci.yml)
+[![Docs](https://github.com/fortran-lang/fplotlib/actions/workflows/docs.yml/badge.svg)](https://fplotlib.fortran-lang.org/)
 
 Pure Fortran plotting library with a pylab-style API, writing SVG, PNG, PDF and EPS.
 No external graphics library: the PNG rasterizer and its fonts are part of fplotlib.
+
+**Documentation and gallery:** https://fplotlib.fortran-lang.org/
 
 ```fortran
 use fplotlib
@@ -56,6 +59,11 @@ call suptitle("figure title")
   `transform="axes"` places in fractions of the axes box.
   `connectionstyle="arc3,rad=0.3"` bows the leader out of the straight
   line, and `boxstyle="round,pad=0.5"` rounds the corners of the box
+- `textbox` places a rich MyST Markdown block (bold, italic, inline and
+  displayed TeX math, lists, Knuth–Plass justification and hyphenation)
+  in axes, figure, or data coordinates, with optional rounded `facecolor=`,
+  `edgecolor=`, `pad=` and `radius=` for inset cards, wrapped titles, and
+  figure captions
 - `imshow` of an (row, column, channel) array paints the colours given,
   three channels for RGB or four for RGBA
 - `imshow` with `cmap`, `extent`, `origin`, `vmin`/`vmax` and square-pixel
@@ -187,8 +195,10 @@ call suptitle("figure title")
   `\widehat`, ...), `\overline` and `\underline`; the alphabets `\mathrm`,
   `\mathit`, `\mathbf`, `\mathsf`, `\mathbb` and `\mathcal`; `\text` in
   Lato; the four styles (`\displaystyle`, ...) and TeX's spaces (`\,`,
-  `\quad`, ...). `tests/math_refs.txt` holds where XeTeX puts every glyph
-  and rule of 83 test formulas, and the layout is checked against it
+  `\quad`, ...); and the alignments `matrix`, `pmatrix`, `bmatrix`,
+  `Bmatrix`, `vmatrix`, `Vmatrix`, `cases`, `array`, `aligned` and
+  `gathered`. `tests/math_refs.txt` holds where XeTeX puts every glyph
+  and rule of 92 test formulas, and the layout is checked against it
 - Automatic delimiters, as Typst has them: matched `( )`, `[ ]`, `\{ \}`,
   `| |`, `\| \|`, `\langle \rangle`, `\lfloor \rfloor` and `\lceil \rceil`
   grow to fit what they enclose, so `$(\frac{a}{b})$` needs no `\left` and
@@ -233,6 +243,152 @@ call suptitle("figure title")
   single letters, `C0`-`C9`, or a greyscale fraction such as `"0.5"`
 - SVG defaults aligned with matplotlib (6.4×4.8 in, tab10 colors, subplot margins)
 
+## Documents
+
+`typeset` sets a whole document, written in Markdown with TeX mathematics
+(`$...$` inline, `$$...$$` displayed), and writes it as PDF, or as one SVG,
+PNG or EPS file per page:
+
+```fortran
+call typeset([character(len=80) :: &
+    "---", &
+    "title: Notes", &
+    "numbersections: true", &
+    "---", &
+    "# Energy", &
+    "", &
+    "The energy of a mass at rest is", &
+    "$$ E = mc^2 $$ (eq:einstein)", &
+    "and {eq}`eq:einstein` is the best known formula of physics."], "notes.pdf")
+```
+
+`typeset_file` reads Markdown from one file or an array of files (front matter
+from the first, labels and cross-references resolved across all of them):
+
+```fortran
+call typeset_file("chapter1.md", "chapter1.pdf")
+call typeset_file([character(len=32) :: "ch1.md", "ch2.md"], "book.pdf")
+```
+
+The bundled CLI runs `typeset_file` from the command line:
+
+```bash
+fpm run typeset -- ch1.md ch2.md -o book.pdf
+```
+
+The built-in `:::{literalinclude} path` directive includes a source file as a
+code block, resolving relative paths against the Markdown file's directory,
+with optional `:lines:` (e.g. `1-10`, `5-`, `-10`, `1-3, 7-9`) and `:language:`
+options.
+
+Markdown pipe tables (`| A | B |` with `:---`, `:---:`, `---:` column
+alignments) and the `:::{table} Caption` directive are rendered in booktabs
+style and numbered for `{numref}` / `{ref}` cross-references.
+
+For building reports directly inside a Fortran simulation without managing
+intermediate files, use the immediate-mode report API (`markdown`,
+`include_figure`, `include_table`, `save`, `new_report`, `render_report`) or
+an explicit `report_t`:
+
+```fortran
+call new_report()
+call markdown("# Results")
+call plot(x, y)
+call include_figure(caption="Simulation output.", label="fig:out", width="85%")
+call clf()
+call include_table(values, columns=[character(len=4) :: "t", "y(t)"], &
+                   caption="Summary.", label="tab:res")
+call markdown("See {numref}`fig:out` and {numref}`tab:res`.")
+call save("report.pdf")
+call save("report.svg")   ! reuses cached layout
+```
+
+The layout is TeX's (`fplotlib_typeset`), with LaTeX's parameters and the
+spacing of its article and book classes:
+
+- paragraphs are broken into lines by Knuth and Plass's algorithm, TeX's
+  `line_break` with its two passes, badness, demerits and fitness
+  classes, and hyphenated with Liang's algorithm and the patterns LaTeX
+  and Typst use for English (`hyph-en-us`); interword glue is XeTeX's
+  for an OpenType font, and the space factor is `\nonfrenchspacing`'s;
+- lines go onto a vertical list with `\baselineskip`, `\lineskip` and
+  TeX's club, widow and broken penalties, and TeX's page builder cuts it
+  into pages at the breaks of least cost;
+- displays get `\abovedisplayskip` or the short skips, equation numbers
+  at the right margin, and the paragraph goes on after them unindented.
+
+A document goes through two layers: `fplotlib_markdown` parses a MyST subset
+of Markdown and lays it out with LaTeX article or book spacing, setting it
+twice, as LaTeX is run twice, so that the first pass numbers the sections and
+equations every reference needs; and `fplotlib_typeset` implements
+TeX's primitives (words, glue, kerns, penalties, paragraphs, formulas, marks,
+and the page builder).
+
+The text is a strict MyST subset. TeX is confined to mathematics between `$...$`
+and `$$...$$`. A display followed by `(eq:name)` is numbered, and
+`` {eq}`eq:name` `` refers to it. A target `(sec:name)=` labels the block after
+it; for a heading, `` {numref}`sec:name` `` writes "Section" and its number,
+and `` {ref}`sec:name` `` writes its title; for a figure, `` {numref}`fig:name` ``
+writes "Fig." and its number, and `` {ref}`fig:name` `` writes its caption. As in
+Sphinx, a role may give its own text, `` {ref}`the introduction <sec:name>` `` or
+`` {numref}`Part %s <sec:name>` ``.
+A reference that cannot be resolved is set as ?? with a warning, as LaTeX does.
+A line break within a paragraph is a backslash at the end of the line (or,
+in a single string, two spaces; `typeset` given an array of lines drops
+their trailing blanks).
+
+Vector plots can be embedded directly into a document without rasterization:
+capture the current figure with `call named_figure(figs(1), "name")` (or
+`capture_figure(frame)`), pass the array as `figures=figs` to `typeset`, and
+place it in Markdown with ``:::{figure} name`` (supporting `:width:` in `%` or
+any length unit, `:align:`, `:name:`, and the body as caption) or standalone
+`![caption](name)`:
+
+```fortran
+type(md_figure_t) :: figs(1)
+call plot(x, y)
+call named_figure(figs(1), "sine")
+call typeset([character(len=80) :: &
+    "See {numref}`fig:sine`.", "", &
+    ":::{figure} sine", ":width: 80%", ":name: fig:sine", &
+    "A sine wave.", ":::"], "report.pdf", figures=figs)
+```
+
+Front matter, between two lines of `---`, holds the document options: `title`,
+`subtitle`, `author` (or `authors`, one to a line, as a YAML list or repeated),
+`date`, `abstract`, `paper` (`a4`, `a5`, `a6`, `b5`, `letter`, `legal` or
+`W x H`), `fontsize`, `linestretch`, `margin` (and `margin-left`, `-right`,
+`-top`, `-bottom`), `indent`, `parskip`, `align`, `numbersections`,
+`numberequations`, `chapters`, `pagenumbers`, `runningheads`, `flushbottom`,
+`color` and `pagecolor`. Lengths are PostScript points (1/72 in, `pt` and `bp`
+alike), as in Typst, or `pc`, `in`, `cm`, `mm`, `em` or `ex`. A value that
+cannot be read is warned of and leaves the default. Other keys are kept for
+templates, which read them with `md_meta`.
+
+The core sets the article layout, with optional chapter-based numbering
+(`chapters: true`) and running-head placement (`runningheads: true`, drawing
+marks set by a template with `ts_mark`). A template is
+given to `typeset` as callbacks that receive the `md_document_t` first (with
+its `doc%engine` public for `ts_*` calls): `on_directive` is given each MyST
+directive, `:::{name} argument` with `:key: value` options and a body, as an
+`md_directive_t`, and sets those it knows; `on_heading` is given each heading,
+its level, text and number, as an `md_heading_t`, and sets those it wants set its
+own way; and `on_body` adds what comes before and after the body. A callback that
+sets a block says so in `handled` (`.false.` on entry); whatever it leaves is set
+as the core sets it. A callback that sets blocks with `md_blocks` or sets a
+nested document with `md_typeset`/`typeset` is declared `recursive`, and leaves
+the outer document untouched. The gallery's letter sets its sender, recipient
+and closing so, with the room for the signature from its `signature-skip`, and
+its invitation centres the card when the front matter says `valign: center`.
+
+`tests/para_refs.txt` holds how XeTeX breaks seven paragraphs of Lato into
+lines, read from its XDV output (`tools/gen_para_refs.py`), and `fpm test`
+requires the same lines, hyphenated at the same places, with every glyph
+within 0.07 bp (0.02 bp with Lato's exact kerning, which fplotlib stores
+to 5 font units). `tools/compare_docs.py` sets the gallery's documents with
+fplotlib, with LaTeX (Pandoc and Tectonic) and with Typst, with the same
+fonts, and puts the pages side by side.
+
 ## Using fplotlib in your project
 
 fplotlib is an [fpm](https://fpm.fortran-lang.org) package with no dependencies
@@ -241,7 +397,7 @@ in its `fpm.toml`:
 
 ```toml
 [dependencies]
-fplotlib = { git = "https://github.com/certik/fplotlib" }
+fplotlib = { git = "https://github.com/fortran-lang/fplotlib" }
 ```
 
 and then `use fplotlib` and call `plot`, `title`, `savefig` as the examples below
@@ -278,7 +434,8 @@ instead, through a `status_t` from `fplotlib_status`. Today that is an
 output file that cannot be written, or a PNG cropped with
 `bbox_inches="tight"` to more pixels than it can hold. `savefig`,
 `save_animation` and the `render_*` functions return it in their optional
-`status`, and without one stop with the message and exit code 2:
+`status`, and without one stop with the message and exit code 2; so does
+`typeset`, for the files of a document:
 
 ```fortran
 use fplotlib
@@ -397,6 +554,8 @@ src/           library modules
                fplotlib_state.f90   shared types and the figure state
                fplotlib_artist.f90  drawing primitives (strokes, fills, markers)
                fplotlib_draw.f90    layout, axes decoration, one renderer per plot type
+               fplotlib_typeset.f90 TeX's paragraph and page layout, for documents
+               fplotlib_markdown.f90 MyST Markdown set as LaTeX's article and book classes
                fplotlib.f90         the plotting API
                fplotlib_render.f90  the renderer contract the backends implement
                fplotlib_status.f90  contract_error, and the status_t of calls that can fail
@@ -420,7 +579,11 @@ OFL notice alongside the MIT one, and the plots fplotlib produces carry no
 obligations. Because "Lato" is a Reserved Font Name, the fonts fplotlib
 embeds in PDF and EPS files have names of their own: `FplotlibSans-Regular`,
 `FplotlibSans-Bold`, `FplotlibSans-Italic` and `FplotlibMath`. `tools/gen_glyphs.py` regenerates the file from the pinned font
-files. The colormap tables in `src/fplotlib_cmap.f90` are sampled from matplotlib, which is
+files. The hyphenation patterns in `src/fplotlib_hyph_data.f90` are generated by
+`tools/gen_hyph.py` from `hyph-en-us.tex` of the hyph-utf8 project, © Gerard
+D.C. Kuiken, whose licence permits copying and distribution with or without
+modification provided the copyright notice is kept, as it is in the file.
+The colormap tables in `src/fplotlib_cmap.f90` are sampled from matplotlib, which is
 BSD-licensed, and the perceptual maps (viridis, magma, inferno, plasma) are
 released by their authors under CC0.
 
@@ -462,7 +625,7 @@ attaches its own ids and metadata.
 Math is the exception: matplotlib's mathtext is its own approximation of TeX,
 and fplotlib follows TeX itself, so the formulas are checked against XeTeX
 instead. `tests/math_refs.txt` holds where XeTeX (Tectonic, with
-unicode-math and the same font files) puts every glyph and rule of 83
+unicode-math and the same font files) puts every glyph and rule of 92
 formulas, and `fpm test` requires fplotlib to put each within 0.02 pt of it.
 The automatic delimiters, which TeX does not have, are checked against
 Typst's in `tests/delim_refs.txt`. Both files are regenerated with pixi,

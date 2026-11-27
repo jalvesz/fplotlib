@@ -1,17 +1,22 @@
 program test_plots
     use fplotlib
     use test_fingerprint, only: fp_check_png, fp_check_apng, fp_check_gif, fp_finish
-    use test_mathref, only: math_ref_check, delim_ref_check, face_check
+    use test_mathref, only: math_ref_check, delim_ref_check, face_check, mathtext_edge_check
     use test_missing, only: missing_data_check
     use test_contract, only: contract_case, contract_check
     use test_glyph_runs, only: glyph_runs_check
     use test_frame_backends, only: frame_backend_check
     use test_frames, only: frames_check
+    use test_hyph, only: hyph_check
+    use test_typeset, only: para_ref_check
+    use test_markdown, only: markdown_check
     implicit none
-    integer :: fig1, nmath, ndelim, nface, nmissing, ncontract
+    integer :: fig1, nmath, ndelim, nface, nedge, nmissing, ncontract, npara
     integer :: nglyph
     integer :: nbackend
     integer :: nframe
+    integer :: nhyph
+    integer :: nmd
     character(len=16) :: carg
     type(axes), allocatable :: axs(:, :)
     type(axes) :: a1, a2, a3
@@ -1587,13 +1592,21 @@ program test_plots
     call fp_check_apng("anim_sine_apng", "tests/out/anim_sine.png")
     print *, "wrote tests/out/anim_sine.png"
 
+    ! A document: Markdown set by TeX's rules over three pages, written in
+    ! every format.
+    call document_case()
+    call textbox_case()
+
     print *, "All test plots written."
 
     ! The math layout against XeTeX's; see test_mathref.f90.
     call math_ref_check("tests/math_refs.txt", nmath)
+    ! The line breaking against XeTeX's; see test_typeset.f90.
+    call para_ref_check("tests/para_refs.txt", npara)
     ! The automatic delimiters against Typst's.
     call delim_ref_check("tests/delim_refs.txt", ndelim)
     call face_check(nface)
+    call mathtext_edge_check(nedge)
     ! NaN and infinite values in every plot type; see test_missing.f90.
     call missing_data_check(nmissing)
     ! Broken preconditions stop with the rule they broke.
@@ -1604,20 +1617,159 @@ program test_plots
     call frame_backend_check(nbackend)
     ! Owned frames and pages; see test_frames.f90.
     call frames_check(nframe)
+    ! English hyphenation patterns; see test_hyph.f90.
+    call hyph_check(nhyph)
+    ! Markdown documents, read back from their pages; see test_markdown.f90.
+    call markdown_check(nmd)
 
     ! Every PNG and GIF frame against its stored fingerprint; see
     ! test_fingerprint.f90. Stops with a failure if any picture changed.
     call fp_finish("tests/fingerprints.txt")
     if (nmath > 0) error stop "math layout differs from XeTeX"
+    if (npara > 0) error stop "line breaking differs from XeTeX"
     if (ndelim > 0) error stop "automatic delimiters differ from Typst"
     if (nface > 0) error stop "text around math lost its face"
+    if (nedge > 0) error stop "mathtext edge cases failed"
     if (nmissing > 0) error stop "missing data reached the output"
     if (ncontract > 0) error stop "a broken precondition did not stop as expected"
     if (nglyph > 0) error stop "glyph runs failed"
     if (nbackend > 0) error stop "frame backends failed"
     if (nframe > 0) error stop "owned frames failed"
+    if (nhyph > 0) error stop "hyphenation failed"
+    if (nmd > 0) error stop "markdown documents failed"
 
 contains
+
+    subroutine document_case()
+        character(len=90), parameter :: doc(*) = [character(len=90) :: &
+            "---", &
+            "title: A Small Document", &
+            "author: fplotlib", &
+            "paper: a6", &
+            "margin: 1.2cm", &
+            "fontsize: 9pt", &
+            "numbersections: true", &
+            "---", &
+            "", &
+            "# Text", &
+            "", &
+            "A paragraph of *emphasis*, **strong** text, `code`, a [link](https://example.org),", &
+            "an en--dash, an em---dash, ""quotes"" and a formula $e^{i\pi} + 1 = 0$, broken into", &
+            "lines and hyphenated as TeX does it.", &
+            "", &
+            "- a list item", &
+            "- another, with a nested list:", &
+            "    1. first", &
+            "    2. second", &
+            "", &
+            "> A quotation, set with margins on both sides.", &
+            "", &
+            "(sec:math)=", &
+            "# Mathematics", &
+            "", &
+            "A numbered display, {eq}`eq:m`, referred to by name:", &
+            "$$ M = \begin{pmatrix} a & b \\ c & d \end{pmatrix}, \quad", &
+            "   |x| = \begin{cases} x & x \ge 0 \\ -x & x < 0 \end{cases} $$ (eq:m)", &
+            "and an aligned one:", &
+            "$$ \begin{aligned} (a+b)^2 &= a^2 + 2ab + b^2 \\ &\ge 4ab \end{aligned} $$", &
+            "", &
+            ":::{div}", &
+            ":align: center", &
+            ":color: darkred", &
+            ":size: large", &
+            "Centred, coloured and larger.", &
+            ":::", &
+            "", &
+            ":::{pagebreak}", &
+            ":::", &
+            "", &
+            "{numref}`sec:math` ends on the page before this one."]
+        integer :: k
+        call typeset(doc, "tests/out/document.png", dpi=100.0_dp, on_directive=doc_directive)
+        do k = 1, 3
+            call fp_check_png("document_p"//achar(48 + k), &
+                              "tests/out/document-"//achar(48 + k)//".png")
+        end do
+        call typeset(doc, "tests/out/document.svg", on_directive=doc_directive)
+        call typeset(doc, "tests/out/document.pdf", on_directive=doc_directive)
+        call typeset(doc, "tests/out/document.eps", on_directive=doc_directive)
+        print *, "wrote tests/out/document.pdf and its pages as .svg, .png and .eps"
+    end subroutine document_case
+
+    subroutine textbox_case()
+        character, parameter :: NL = achar(10)
+        character(len=:), allocatable :: svg_s, pdf_s, png_s, eps_s
+        real(dp) :: tx(20), ty(20)
+        integer :: k
+        do k = 1, 20
+            tx(k) = real(k - 1, dp)/19.0_dp
+            ty(k) = sin(3.141592653589793_dp*tx(k))
+        end do
+        call clf()
+        call figure(figsize=[6.4_dp, 4.8_dp])
+        call plot(tx, ty, "C0-", lw=2.0_dp)
+        call textbox(0.0_dp, 1.03_dp, &
+                     "**Wrapped Title**"//NL//NL//"*Subtitle with $y = \sin(\pi x)$*", &
+                     coords="axes", ha="left", va="bottom", align="left", fontsize=10.0_dp)
+        call textbox(0.95_dp, 0.92_dp, "**Card**"//NL//NL//"$$y = \sin(\pi x)$$"//NL//NL// &
+                     "- peak at $x = 0.5$", width=150.0_dp, coords="axes", ha="right", va="top", &
+                     fontsize=8.5_dp, facecolor="#f8fafc", edgecolor="#64748b", lw=0.8_dp, &
+                     alpha=0.95_dp, pad=6.0_dp, radius=4.0_dp)
+        call textbox(0.5_dp, 0.2_dp, "Data note", width=70.0_dp, coords="data", &
+                     ha="center", va="center", fontsize=8.0_dp, align="center")
+        call textbox(0.5_dp, 0.03_dp, "**Figure 1.** Caption in figure coordinates.", &
+                     width=300.0_dp, coords="figure", ha="center", va="bottom", &
+                     fontsize=8.5_dp, align="justify")
+        svg_s = render_svg()
+        pdf_s = render_pdf()
+        png_s = render_png()
+        eps_s = render_eps()
+        if (len(svg_s) < 500 .or. index(svg_s, "</svg>") == 0) &
+            error stop "textbox_case: invalid SVG"
+        if (len(pdf_s) < 500 .or. index(pdf_s, "%PDF-") /= 1) &
+            error stop "textbox_case: invalid PDF"
+        if (len(png_s) < 500 .or. index(png_s, achar(137)//"PNG") /= 1) &
+            error stop "textbox_case: invalid PNG"
+        if (len(eps_s) < 500 .or. index(eps_s, "%!PS-Adobe-") /= 1) &
+            error stop "textbox_case: invalid EPS"
+    end subroutine textbox_case
+
+    recursive subroutine doc_directive(doc, d, ctx, handled)
+        use fplotlib_markdown, only: md_document_t, md_ctx_t, md_directive_t, md_blocks, &
+                                     md_option, md_color, md_align, md_noindent, md_base_size
+        use fplotlib_typeset, only: ts_page_break, ts_addvspace, ts_end_par, &
+                                    ts_glue_t, ALIGN_JUSTIFY
+        type(md_document_t), intent(inout) :: doc
+        type(md_directive_t), intent(in) :: d
+        type(md_ctx_t), intent(in) :: ctx
+        logical, intent(inout) :: handled
+        type(md_ctx_t) :: sub
+        type(ts_glue_t) :: around
+        real(dp) :: f
+        integer :: al
+
+        handled = d%name == "div" .or. d%name == "pagebreak"
+        if (.not. handled) return
+        if (d%name == "pagebreak") then
+            call ts_page_break(doc%engine)
+            call md_noindent(doc, .false.)
+            return
+        end if
+        sub = ctx
+        f = md_base_size(doc)/10.0_dp
+        around = ts_glue_t(10.0_dp*f, 3.0_dp*f, 5.0_dp*f, 0, 0)
+        al = md_align(md_option(d%opts, "align"), -1)
+        if (al >= 0) then
+            sub%align = al
+            if (al /= ALIGN_JUSTIFY) sub%indent = .false.
+        end if
+        if (md_option(d%opts, "size") == "large") sub%size = 1.2_dp*md_base_size(doc)
+        sub%color = md_color(md_option(d%opts, "color"), sub%color)
+        if (al >= 0) call ts_addvspace(doc%engine, around)
+        call md_blocks(doc, d%body, sub)
+        call ts_end_par(doc%engine)
+        if (al >= 0) call ts_addvspace(doc%engine, around)
+    end subroutine doc_directive
 
     ! A repeatable stand-in for random numbers: the fractional part of a
     ! large sine, summed twice so the result piles up in the middle.

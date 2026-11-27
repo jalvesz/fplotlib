@@ -18,7 +18,10 @@ fplotlib_draw
 fplotlib_gif
 fplotlib_glyphs
 fplotlib_glyphs_data
+fplotlib_hyph
+fplotlib_hyph_data
 fplotlib_io
+fplotlib_markdown
 fplotlib_mathsym
 fplotlib_mathtext
 fplotlib_png
@@ -35,5 +38,6 @@ fplotlib_text
 fplotlib_ticks
 fplotlib_tri
 fplotlib_type3
+fplotlib_typeset
 fplotlib
 ```

@@ -4,7 +4,7 @@
 module test_glyph_runs
     use fplotlib_style, only: dp
     use fplotlib_render, only: glyphrun_t, paint_t
-    use fplotlib_text, only: text_layout
+    use fplotlib_text, only: text_layout, run_add
     use fplotlib_glyphs, only: glyph_cmap, FACE_REGULAR
     use fplotlib_backend_pdf, only: pdf_renderer_t
     use fplotlib_backend_svg, only: svg_renderer_t
@@ -24,6 +24,8 @@ contains
         call pdf_text_check(nfail)
         call svg_text_check(nfail)
         call hand_built_rules(nfail)
+        call own_glyph(nfail)
+        call long_formulas(nfail)
         print "(a,i0)", "glyph runs: failures = ", nfail
     end subroutine glyph_runs_check
 
@@ -196,6 +198,75 @@ contains
         call check(rules%n >= 3 .and. size(rules%y) >= rules%n .and. size(rules%h) >= rules%n, &
                    "a rule list with arrays of different lengths grows by the shortest", nfail)
     end subroutine hand_built_rules
+
+    ! run_add given a glyph of the run it adds to, when the run is full:
+    ! the glyph is read before the run grows, which would free it.
+    subroutine own_glyph(nfail)
+        integer, intent(inout) :: nfail
+        type(glyphrun_t) :: run
+        real(dp) :: advance
+        integer :: k
+
+        call text_layout(repeat("A", 16), 10.0_dp, FACE_REGULAR, 0.0_dp, 0.0_dp, run, advance)
+        k = run%n
+        call run_add(run, run%gid(1), run%x(1), run%y(1), run%size(1))
+        call check(run%n == k + 1 .and. run%gid(run%n) == run%gid(1) .and. &
+                   run%x(run%n) == run%x(1), "run_add takes a glyph of the run it grows", nfail)
+    end subroutine own_glyph
+
+    ! Formulas long enough that parsing a part of one adds more noads than
+    ! there is room for, while the noad the part belongs to is being
+    ! stored into: under the sanitizer job, a part stored straight from the
+    ! parse into the array the parse has moved is a use after free. Each
+    ! of the stores is reached: the parts of \frac, \binom and \cfrac, a
+    ! root's radicand and index, \overline, an accent, \left...\right,
+    ! and, as their place in the array depends on how full it is, \over,
+    ! automatic parentheses and a cube root after 1 to 140 atoms.
+    subroutine long_formulas(nfail)
+        integer, intent(inout) :: nfail
+        character(len=:), allocatable :: many, tex
+        character(len=*), parameter :: cbrt = achar(226)//achar(136)//achar(155)
+        integer :: k, m
+        logical :: ok
+
+        many = ""
+        do k = 1, 150
+            many = many//"a "
+        end do
+        call lays_out("\frac{"//many//"}{"//many//"}", "\frac")
+        call lays_out("\binom{"//many//"}{"//many//"}", "\binom")
+        call lays_out("\cfrac{"//many//"}{"//many//"}", "\cfrac")
+        call lays_out("\sqrt{"//many//"}", "\sqrt")
+        call lays_out("\sqrt["//many//"]{x}", "\sqrt[...]")
+        call lays_out("\overline{"//many//"}", "\overline")
+        call lays_out("\hat{"//many//"}", "an accent")
+        call lays_out("\left("//many//"\right)", "\left...\right")
+        call lays_out(cbrt//"{"//many//"}", "a cube root")
+        ok = .true.
+        do m = 1, 140
+            tex = "("//repeat("a ", m)//") \over b"
+            ok = ok .and. formula_ok(tex)
+            tex = "("//repeat("a ", m)//"(b))"
+            ok = ok .and. formula_ok(tex)
+            tex = repeat("a ", m)//cbrt//"x"
+            ok = ok .and. formula_ok(tex)
+        end do
+        call check(ok, "formulas with \over, parentheses and a cube root after 1 to 140 atoms lay out", nfail)
+    contains
+        subroutine lays_out(tex, what)
+            character(len=*), intent(in) :: tex, what
+            call check(formula_ok(tex), "a long formula with "//what//" lays out whole", nfail)
+        end subroutine lays_out
+
+        logical function formula_ok(tex)
+            character(len=*), intent(in) :: tex
+            type(glyphrun_t) :: run
+            type(mrules_t) :: rules
+            real(dp) :: w, h, d
+            call math_formula(tex, 10.0_dp, .false., run, rules, w, h, d)
+            formula_ok = run%n >= 1 .and. w > 0.0_dp
+        end function formula_ok
+    end subroutine long_formulas
 
     subroutine pdf_text_check(nfail)
         integer, intent(inout) :: nfail
