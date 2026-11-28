@@ -19,6 +19,11 @@ call legend()
 call savefig("out.svg")   ! or "out.png", "out.pdf", "out.eps"
 call show()               ! Jupyter (LFortran) or writes fplotlib_show.svg
 
+! or in a single call
+call plot(x, y, "k-", label="sin", title="My plot", xlabel="x", ylabel="y", &
+          xlim=[0.0_dp, 6.28_dp], ylim=[-1.1_dp, 1.1_dp], &
+          grid=.true., legend=.true., savefig="out.svg")
+
 ! subplots
 call clf()
 call subplot(2, 1, 1)
@@ -32,10 +37,14 @@ call suptitle("figure title")
 
 ## Features
 
+- Object-oriented `figure_t` and `axes_t` handles for explicit figure
+  management and multiple simultaneous independent figures
 - `plot`, `scatter`, `bar`, `hist`, `fill_between`, `errorbar`
 - `bar` takes `yerr=`, `capsize=`, `align="edge"` and `tick_label=`;
   `errorbar` takes `ecolor=`, `elinewidth=`, `lw=` and `alpha=`
 - `plot(y)` with a single array numbers the points `0, 1, 2, ...` for x
+- Single-call convenience kwargs on `plot` (and `ax%plot`): `title=`, `xlabel=`,
+  `ylabel=`, `xlim=`, `ylim=`, `grid=`, `legend=`, `savefig=`, `show=`
 - `xlim`/`ylim` to set, `get_xlim`/`get_ylim` to read back what autoscaling
   chose, and `invert_xaxis`/`invert_yaxis` to make an axis count down
 - `scatter` also takes per-point `sizes=` and color-mapped `cvals=`
